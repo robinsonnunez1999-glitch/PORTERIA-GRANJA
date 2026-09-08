@@ -1,0 +1,1311 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Portería · Control de Acceso</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+  :root{
+    --verde: #2F4A3C;
+    --verde-osc: #223629;
+    --fondo: #F2EFE4;
+    --panel: #FFFFFF;
+    --linea: #DAD4C0;
+    --barro: #A13D2E;
+    --barro-osc: #832F22;
+    --exito: #4C7A5C;
+    --ambar: #B57A1E;
+    --texto: #22261F;
+    --texto-suave: #6B6858;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, "Inter", "Segoe UI", Roboto, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--fondo);color:var(--texto);font-family:var(--sans);height:100%;}
+  #app{max-width:720px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;background:var(--fondo);}
+
+  header.top{background:var(--verde);color:#fff;padding:18px 20px 14px;}
+  header.top h1{margin:0;font-size:19px;font-weight:700;letter-spacing:.2px;}
+  header.top p{margin:3px 0 0;font-size:13px;color:#CFE0D2;}
+
+  nav.tabs{display:flex;background:var(--verde-osc);}
+  nav.tabs button{flex:1;padding:12px 6px;background:none;border:none;color:#B9C7BB;font-size:13.5px;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;}
+  nav.tabs button.active{color:#fff;border-bottom-color:var(--barro);background:rgba(255,255,255,.04);}
+
+  main{flex:1;padding:16px;padding-bottom:60px;}
+
+  .card{background:var(--panel);border:1px solid var(--linea);border-radius:6px;padding:16px;margin-bottom:14px;}
+
+  .search-box{position:sticky;top:0;z-index:5;}
+  input[type=text], input[type=date], select{
+    width:100%;padding:13px 14px;font-size:16px;border:1.5px solid var(--linea);border-radius:6px;
+    background:#fff;color:var(--texto);font-family:var(--sans);
+  }
+  input[type=text]:focus, input[type=date]:focus, select:focus{outline:2px solid var(--verde);outline-offset:1px;border-color:var(--verde);}
+
+  .counter-row{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0;}
+  .counter{flex:1 1 calc(50% - 5px);min-width:120px;background:var(--panel);border:1px solid var(--linea);border-radius:6px;padding:10px 12px;text-align:center;}
+  .counter .num{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--verde);}
+  .counter .lbl{font-size:11.5px;color:var(--texto-suave);margin-top:2px;}
+
+  ul.results{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:8px;}
+  li.person{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    background:var(--panel);border:1px solid var(--linea);border-radius:6px;padding:13px 14px;
+    cursor:pointer;
+  }
+  li.person:active{background:#EEEAD9;}
+  .p-info .p-name{font-weight:700;font-size:15px;}
+  .p-info .p-area{font-size:12.5px;color:var(--texto-suave);margin-top:2px;}
+  .badge{font-size:12px;font-weight:700;padding:5px 10px;border-radius:20px;white-space:nowrap;font-family:var(--mono);}
+  .badge.fuera{background:#EDE9DC;color:var(--texto-suave);}
+  .badge.dentro{background:#E4EEE6;color:var(--exito);}
+
+  .empty{color:var(--texto-suave);text-align:center;padding:30px 10px;font-size:14px;}
+
+  button.action{
+    background:var(--verde);color:#fff;border:none;border-radius:6px;padding:12px 16px;font-size:14.5px;font-weight:700;cursor:pointer;
+  }
+  button.action.secundario{background:transparent;color:var(--verde);border:1.5px solid var(--verde);}
+  button.action.peligro{background:var(--barro);}
+  button.action:active{opacity:.85;}
+  button.link-btn{background:none;border:none;color:var(--barro);font-weight:700;font-size:13px;cursor:pointer;padding:6px 0;}
+
+  h2.section-title{font-size:14px;text-transform:none;color:var(--verde-osc);margin:4px 0 10px;font-weight:700;}
+
+  table.reporte{width:100%;border-collapse:collapse;font-size:13.5px;}
+  table.reporte th{text-align:left;font-size:11.5px;color:var(--texto-suave);border-bottom:1.5px solid var(--linea);padding:6px 4px;font-weight:700;}
+  table.reporte td{padding:8px 4px;border-bottom:1px solid var(--linea);}
+  table.reporte td.time{font-family:var(--mono);}
+  table.reporte tr.extra td{color:var(--texto-suave);font-style:italic;}
+  table.reporte tr.total-row td{font-weight:700;background:#F4F1E4;}
+  .area-group{margin-bottom:18px;}
+  .area-group h3{font-size:14px;margin:0 0 6px;color:var(--barro-osc);display:flex;justify-content:space-between;}
+  .area-group h3 span.n{font-family:var(--mono);color:var(--texto-suave);font-size:12.5px;}
+
+  .row{display:flex;gap:10px;align-items:center;}
+  .row.wrap{flex-wrap:wrap;}
+  .grow{flex:1;}
+
+  .staff-row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--linea);}
+  .staff-row:last-child{border-bottom:none;}
+  .staff-row .meta{font-size:12.5px;color:var(--texto-suave);}
+  .staff-row .del{color:var(--barro);background:none;border:none;font-size:13px;cursor:pointer;font-weight:700;}
+
+  .toast{
+    position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
+    background:var(--verde-osc);color:#fff;padding:12px 20px;border-radius:6px;font-size:14px;font-weight:600;
+    box-shadow:0 4px 14px rgba(0,0,0,.25);z-index:50;max-width:88%;text-align:center;
+  }
+
+  textarea.export{width:100%;min-height:140px;font-family:var(--mono);font-size:12px;border:1.5px solid var(--linea);border-radius:6px;padding:10px;}
+
+  label.field-label{font-size:12.5px;color:var(--texto-suave);font-weight:700;display:block;margin:0 0 5px;}
+
+  #lock-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--verde-osc);}
+  .lock-card{background:var(--panel);border-radius:8px;padding:28px 24px;max-width:340px;width:100%;text-align:center;}
+  .lock-card h1{font-size:18px;margin:0 0 4px;color:var(--verde-osc);}
+  .lock-card p{font-size:13px;color:var(--texto-suave);margin:0 0 18px;}
+  .lock-card input[type=password]{text-align:center;font-size:22px;letter-spacing:4px;font-family:var(--mono);margin-bottom:12px;}
+  .lock-card .err{color:var(--barro);font-size:13px;min-height:18px;margin-bottom:8px;}
+
+  .role-badge{font-size:11.5px;color:#CFE0D2;background:rgba(255,255,255,.12);padding:3px 9px;border-radius:12px;display:inline-block;margin-top:6px;}
+  .logout-link{background:none;border:none;color:#CFE0D2;font-size:12px;text-decoration:underline;cursor:pointer;padding:0;margin-left:8px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+(function(){
+  // ⚠️ Pega aquí el firebaseConfig de tu proyecto (Firebase console → Configuración del proyecto → Tus apps)
+  const firebaseConfig = {
+    apiKey: "AIzaSyAzoh4UHDyXVt7lpK82NhSanBs6u89j2U8",
+    authDomain: "galpon-reemplazos.firebaseapp.com",
+    projectId: "galpon-reemplazos",
+    storageBucket: "galpon-reemplazos.firebasestorage.app",
+    messagingSenderId: "33289343335",
+    appId: "1:33289343335:web:5efd5550b7745be1645fc2"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  const COL = {
+    meta: 'porteria_meta',       // docs: staff, areas, auth
+    records: 'porteria_records', // doc id = fecha (personal fijo)
+    visitors: 'porteria_visitantes' // doc id = fecha (visitantes)
+  };
+
+  const STORAGE_KEYS = {
+    recordsPrefix: 'records:',
+    visitorsPrefix: 'visitors:'
+  };
+
+  const MOTIVOS_VISITA = [
+    'Proveedor',
+    'Carga de animales',
+    'Entrega de alimento para animales',
+    'Visita técnica',
+    'Otro'
+  ];
+
+  const DEFAULT_AREAS = [
+    'Sitio 1 - Gestación y Montas',
+    'Sitio 1 - Maternidad',
+    'Sitio 2',
+    'Sitio 3',
+    'Lavado',
+    'Comedor',
+    'Administración',
+    'Mantenimiento',
+    'Seguridad'
+  ];
+
+  const DEFAULT_STAFF = [
+    {id:'s1', name:'Nelly Pallasco', area:'Sitio 1 - Gestación y Montas'},
+    {id:'s2', name:'Karen Chichanda', area:'Sitio 1 - Gestación y Montas'},
+    {id:'s3', name:'Jordan Caicedo', area:'Sitio 1 - Gestación y Montas'},
+    {id:'s4', name:'Javier Gutiérrez', area:'Sitio 1 - Gestación y Montas'},
+    {id:'s5', name:'Nicolás Holguín', area:'Sitio 1 - Maternidad'},
+    {id:'s6', name:'José Zambrano', area:'Sitio 1 - Maternidad'},
+    {id:'s7', name:'Erika Cagua', area:'Sitio 1 - Maternidad'},
+    {id:'s8', name:'Edith Mendoza', area:'Sitio 1 - Maternidad'},
+    {id:'s9', name:'Sebastián Pereira', area:'Sitio 2'},
+    {id:'s10', name:'Luis Arroyo', area:'Sitio 2'},
+    {id:'s11', name:'César Pinchao', area:'Sitio 3'},
+    {id:'s12', name:'Daniel Taquez', area:'Sitio 3'},
+    {id:'s13', name:'Daniel Macías', area:'Lavado'},
+    {id:'s14', name:'Carlos Lucas', area:'Seguridad'}
+  ];
+
+  let state = {
+    tab: 'porteria',
+    porteriaMode: 'entrada',
+    staff: [],
+    areas: [],
+    search: '',
+    recordsByDate: {},
+    visitorsByDate: {},
+    reportDate: todayStr(),
+    comedorDate: todayStr(),
+    session: null,       // {role: 'guardia'|'admin'}
+    pins: {guardiaHash:null, adminHash:null},
+    loginError: ''
+  };
+
+  function todayStr(){
+    const d = new Date();
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  function nowTime(){
+    const d = new Date();
+    return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }
+  function normalize(s){
+    return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  }
+  function uid(){
+    return 'id_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  }
+
+  async function sha256Hex(str){
+    const enc = new TextEncoder().encode(str);
+    const digest = await crypto.subtle.digest('SHA-256', enc);
+    return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }
+
+  const recordListeners = {};
+  const visitorListeners = {};
+
+  function bootstrapAndListen(){
+    // Personal
+    db.collection(COL.meta).doc('staff').onSnapshot(snap=>{
+      if(snap.exists && snap.data().list){ state.staff = snap.data().list; }
+      else { db.collection(COL.meta).doc('staff').set({list: DEFAULT_STAFF}); state.staff = DEFAULT_STAFF; }
+      render();
+    }, ()=> showToast('No se pudo conectar con la nube. Revisa tu internet.'));
+
+    // Áreas
+    db.collection(COL.meta).doc('areas').onSnapshot(snap=>{
+      if(snap.exists && snap.data().list){ state.areas = snap.data().list; }
+      else { db.collection(COL.meta).doc('areas').set({list: DEFAULT_AREAS}); state.areas = DEFAULT_AREAS; }
+      render();
+    });
+
+    // PINes (guardados como hash, nunca en texto plano)
+    db.collection(COL.meta).doc('auth').onSnapshot(async snap=>{
+      if(snap.exists && snap.data().guardiaHash && snap.data().adminHash){
+        state.pins = {guardiaHash: snap.data().guardiaHash, adminHash: snap.data().adminHash};
+      } else {
+        const [gh, ah] = await Promise.all([sha256Hex('1234'), sha256Hex('9090')]);
+        await db.collection(COL.meta).doc('auth').set({guardiaHash: gh, adminHash: ah});
+      }
+    });
+
+    subscribeRecords(todayStr());
+    subscribeVisitors(todayStr());
+    render();
+  }
+
+  function subscribeRecords(date){
+    if(recordListeners[date]) return;
+    recordListeners[date] = db.collection(COL.records).doc(date).onSnapshot(snap=>{
+      state.recordsByDate[date] = (snap.exists && snap.data().list) || [];
+      render();
+    });
+  }
+
+  function subscribeVisitors(date){
+    if(visitorListeners[date]) return;
+    visitorListeners[date] = db.collection(COL.visitors).doc(date).onSnapshot(snap=>{
+      state.visitorsByDate[date] = (snap.exists && snap.data().list) || [];
+      render();
+    });
+  }
+
+  async function saveRecords(date){
+    try{
+      await db.collection(COL.records).doc(date).set({list: state.recordsByDate[date] || []});
+    }catch(e){
+      showToast('No se pudo guardar. Revisa tu internet.');
+    }
+  }
+
+  async function saveVisitors(date){
+    try{
+      await db.collection(COL.visitors).doc(date).set({list: state.visitorsByDate[date] || []});
+    }catch(e){
+      showToast('No se pudo guardar. Revisa tu internet.');
+    }
+  }
+
+  async function saveStaff(){
+    try{ await db.collection(COL.meta).doc('staff').set({list: state.staff}); }
+    catch(e){ showToast('No se pudo guardar el personal.'); }
+  }
+
+  async function saveAreas(){
+    try{ await db.collection(COL.meta).doc('areas').set({list: state.areas}); }
+    catch(e){ showToast('No se pudo guardar las áreas.'); }
+  }
+
+  async function savePins(pinGuardia, pinAdmin){
+    try{
+      const [gh, ah] = await Promise.all([sha256Hex(pinGuardia), sha256Hex(pinAdmin)]);
+      await db.collection(COL.meta).doc('auth').set({guardiaHash: gh, adminHash: ah});
+      showToast('PINes actualizados.');
+    }catch(e){ showToast('No se pudo guardar los PINes.'); }
+  }
+
+  async function addVisitor(data){
+    const date = todayStr();
+    if(!state.visitorsByDate[date]) state.visitorsByDate[date] = [];
+    state.visitorsByDate[date].push({
+      id: uid(), name: data.name, motivo: data.motivo, area: data.area,
+      cedula: data.cedula || '', placa: data.placa || '', entrada: nowTime(), salida: null
+    });
+    await saveVisitors(date);
+    showToast(data.name+' registró entrada · '+nowTime());
+    render();
+  }
+
+  async function closeVisitor(visitorId){
+    const date = todayStr();
+    const list = state.visitorsByDate[date] || [];
+    const v = list.find(x=>x.id===visitorId && !x.salida);
+    if(v){
+      v.salida = nowTime();
+      await saveVisitors(date);
+      showToast(v.name+' registró salida · '+v.salida);
+      render();
+    }
+  }
+
+  function getOpenSession(personId, date){
+    const list = state.recordsByDate[date] || [];
+    for(let i=list.length-1;i>=0;i--){
+      if(list[i].staffId===personId && !list[i].salida) return list[i];
+    }
+    return null;
+  }
+
+  function getSessions(personId, date){
+    return (state.recordsByDate[date] || []).filter(r=>r.staffId===personId);
+  }
+
+  function isInside(personId, date){
+    return !!getOpenSession(personId, date);
+  }
+
+  async function toggleEntry(person){
+    const date = todayStr();
+    if(isInside(person.id, date)) await registrarSalidaStaff(person);
+    else await registrarEntradaStaff(person);
+  }
+
+  async function registrarEntradaStaff(person){
+    const date = todayStr();
+    if(!state.recordsByDate[date]) state.recordsByDate[date] = [];
+    if(isInside(person.id, date)){
+      showToast(person.name + ' ya está dentro.');
+      return;
+    }
+    state.recordsByDate[date].push({
+      staffId: person.id, name: person.name, area: person.area,
+      entrada: nowTime(), salida: null
+    });
+    await saveRecords(date);
+    const n = getSessions(person.id, date).length;
+    showToast(person.name + (n>1 ? ' registró un nuevo ingreso · ' : ' registró entrada · ') + nowTime());
+    render();
+  }
+
+  async function registrarSalidaStaff(person){
+    const date = todayStr();
+    const open = getOpenSession(person.id, date);
+    if(!open){
+      showToast(person.name + ' no tiene una entrada abierta.');
+      return;
+    }
+    open.salida = nowTime();
+    await saveRecords(date);
+    showToast(person.name + ' registró salida · ' + open.salida);
+    render();
+  }
+
+  let toastTimer = null;
+  function showToast(msg){
+    let t = document.getElementById('toast');
+    if(!t){
+      t = document.createElement('div');
+      t.id = 'toast';
+      t.className = 'toast';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.display = 'block';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>{ t.style.display='none'; }, 2200);
+  }
+
+  function generarPdf(filename, title, sub, sections){
+    if(!window.jspdf || !window.jspdf.jsPDF){
+      showToast('El generador de PDF no cargó. Revisa tu conexión e intenta de nuevo.');
+      return;
+    }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text(title, 14, 16);
+    doc.setFontSize(10);
+    doc.setTextColor(90);
+    doc.text(sub, 14, 22);
+    doc.setTextColor(0);
+    let y = 28;
+    sections.forEach(sec=>{
+      if(sec.rows.length===0) return;
+      if(sec.heading){
+        doc.setFontSize(11);
+        doc.text(sec.heading, 14, y);
+        y += 4;
+      }
+      doc.autoTable({
+        startY: y,
+        head: [sec.headers],
+        body: sec.rows,
+        styles: {fontSize:9, cellPadding:3},
+        headStyles: {fillColor: [47,74,60]},
+        margin: {left:14, right:14}
+      });
+      y = doc.lastAutoTable.finalY + 10;
+    });
+    doc.save(filename);
+    showToast('PDF generado.');
+  }
+
+  function csvEscape(v){
+    v = String(v==null?'':v);
+    if(/[",\n]/.test(v)) return '"'+v.replace(/"/g,'""')+'"';
+    return v;
+  }
+
+  function downloadFile(filename, content, mime){
+    const blob = new Blob([content], {type: mime || 'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+  }
+
+  // ---------- RENDER ----------
+  const GUARDIA_TABS = ['porteria','visitantes'];
+
+  function render(){
+    if(!state.session){ renderLockScreen(); return; }
+    if(state.session.role==='guardia' && !GUARDIA_TABS.includes(state.tab)){ state.tab = 'porteria'; }
+    const app = document.getElementById('app');
+    app.innerHTML = '';
+    app.appendChild(renderHeader());
+    app.appendChild(renderTabs());
+    const main = document.createElement('main');
+    if(state.tab === 'porteria') main.appendChild(renderPorteria());
+    else if(state.tab === 'visitantes') main.appendChild(renderVisitantes());
+    else if(state.tab === 'reporte') main.appendChild(renderReporte());
+    else if(state.tab === 'historial') main.appendChild(renderHistorial());
+    else if(state.tab === 'comedor') main.appendChild(renderComedor());
+    else if(state.tab === 'personal') main.appendChild(renderPersonal());
+    app.appendChild(main);
+  }
+
+  function renderHeader(){
+    const h = document.createElement('header');
+    h.className = 'top';
+    const roleLabel = state.session.role==='admin' ? 'Administración' : 'Guardia';
+    h.innerHTML = '<h1>Portería · Control de Acceso</h1><p>'+ new Date().toLocaleDateString('es-EC',{weekday:'long', day:'numeric', month:'long'}) +'</p>'+
+      '<span class="role-badge">'+roleLabel+'</span>';
+    const logoutBtn = document.createElement('button');
+    logoutBtn.className = 'logout-link';
+    logoutBtn.textContent = 'Cerrar sesión';
+    logoutBtn.onclick = logout;
+    h.appendChild(logoutBtn);
+    return h;
+  }
+
+  function renderTabs(){
+    const nav = document.createElement('nav');
+    nav.className = 'tabs';
+    let tabs = [['porteria','Portería'],['visitantes','Visitantes'],['reporte','Reporte'],['historial','Historial'],['comedor','Comedor'],['personal','Personal']];
+    if(state.session.role==='guardia'){ tabs = tabs.filter(([key])=>GUARDIA_TABS.includes(key)); }
+    tabs.forEach(([key,label])=>{
+      const b = document.createElement('button');
+      b.textContent = label;
+      if(state.tab===key) b.className='active';
+      b.onclick = ()=>{ state.tab = key; state.search=''; render(); };
+      nav.appendChild(b);
+    });
+    return nav;
+  }
+
+  function renderPorteria(){
+    const wrap = document.createElement('div');
+    const date = todayStr();
+    const list = state.recordsByDate[date] || [];
+    const insideCount = state.staff.filter(p=>isInside(p.id,date)).length;
+    const enteredToday = new Set(list.map(r=>r.staffId)).size;
+    const visitorsToday = state.visitorsByDate[date] || [];
+    const insideVisitors = visitorsToday.filter(v=>!v.salida).length;
+    const totalEnGranja = insideCount + insideVisitors;
+
+    const counters = document.createElement('div');
+    counters.className = 'counter-row';
+    counters.innerHTML =
+      '<div class="counter"><div class="num">'+totalEnGranja+'</div><div class="lbl">En la granja ahora</div></div>'+
+      '<div class="counter"><div class="num">'+insideCount+'</div><div class="lbl">Dentro ahora</div></div>'+
+      '<div class="counter"><div class="num">'+enteredToday+'</div><div class="lbl">Ingresaron hoy</div></div>'+
+      '<div class="counter"><div class="num">'+state.staff.length+'</div><div class="lbl">Total personal</div></div>';
+    wrap.appendChild(counters);
+
+    const modeRow = document.createElement('div');
+    modeRow.className = 'row';
+    modeRow.style.marginBottom = '12px';
+    const btnEntrada = document.createElement('button');
+    btnEntrada.className = 'action grow' + (state.porteriaMode==='entrada' ? '' : ' secundario');
+    btnEntrada.textContent = 'Registrar Entrada';
+    btnEntrada.onclick = ()=>{ state.porteriaMode='entrada'; state.search=''; render(); };
+    const btnSalida = document.createElement('button');
+    btnSalida.className = 'action grow' + (state.porteriaMode==='salida' ? '' : ' secundario');
+    btnSalida.textContent = 'Registrar Salida';
+    btnSalida.onclick = ()=>{ state.porteriaMode='salida'; state.search=''; render(); };
+    modeRow.appendChild(btnEntrada);
+    modeRow.appendChild(btnSalida);
+    wrap.appendChild(modeRow);
+
+    const searchBox = document.createElement('div');
+    searchBox.className = 'search-box';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = state.porteriaMode==='entrada' ? 'Nombre de quien ENTRA…' : 'Nombre de quien SALE…';
+    input.value = state.search;
+    input.autofocus = true;
+    input.oninput = (e)=>{ state.search = e.target.value; renderResultsOnly(); };
+    searchBox.appendChild(input);
+    wrap.appendChild(searchBox);
+
+    const ul = document.createElement('ul');
+    ul.className = 'results';
+    ul.id = 'results-list';
+    wrap.appendChild(ul);
+
+    setTimeout(()=>{ fillResults(); input.focus(); }, 0);
+
+    function renderResultsOnly(){ fillResults(); }
+
+    function fillResults(){
+      const ulEl = document.getElementById('results-list');
+      if(!ulEl) return;
+      ulEl.innerHTML = '';
+      const q = normalize(state.search);
+      const pool = state.porteriaMode==='entrada'
+        ? state.staff.filter(p=>!isInside(p.id,date))
+        : state.staff.filter(p=>isInside(p.id,date));
+      let matches = pool;
+      if(q.length>0){
+        matches = pool.filter(p=>normalize(p.name).includes(q));
+      }
+      matches = matches.slice(0, 30);
+      if(state.search.trim().length===0){
+        const hint = state.porteriaMode==='entrada'
+          ? 'Escribe un nombre para registrar su entrada.'
+          : 'Escribe un nombre para registrar su salida.';
+        ulEl.innerHTML = '<div class="empty">'+hint+'</div>';
+        return;
+      }
+      if(matches.length===0){
+        const hint = state.porteriaMode==='entrada'
+          ? 'Nadie coincide, o esa persona ya está dentro.'
+          : 'Nadie coincide, o esa persona no está dentro.';
+        ulEl.innerHTML = '<div class="empty">'+hint+'</div>';
+        return;
+      }
+      matches.forEach(p=>{
+        const li = document.createElement('li');
+        li.className = 'person';
+        const badgeTxt = state.porteriaMode==='entrada' ? 'ENTRAR' : 'SALIR';
+        const badgeCls = state.porteriaMode==='entrada' ? 'dentro' : 'fuera';
+        li.innerHTML =
+          '<div class="p-info"><div class="p-name"></div><div class="p-area"></div></div>'+
+          '<div class="badge '+badgeCls+'">'+badgeTxt+'</div>';
+        li.querySelector('.p-name').textContent = p.name;
+        li.querySelector('.p-area').textContent = p.area;
+        li.onclick = ()=>{
+          if(state.porteriaMode==='entrada') registrarEntradaStaff(p);
+          else registrarSalidaStaff(p);
+          state.search='';
+        };
+        ulEl.appendChild(li);
+      });
+    }
+
+    const logHeading = document.createElement('h2');
+    logHeading.className = 'section-title';
+    logHeading.style.marginTop = '20px';
+    logHeading.textContent = 'Ingresos de hoy (' + list.length + ')';
+    wrap.appendChild(logHeading);
+
+    const logDate = document.createElement('div');
+    logDate.style.cssText = 'font-size:12.5px;color:var(--texto-suave);margin:-6px 0 10px;';
+    logDate.textContent = 'Registrando con fecha: ' + formatDateEs(date);
+    wrap.appendChild(logDate);
+
+    const logList = document.createElement('ul');
+    logList.className = 'results';
+    if(list.length===0){
+      const e = document.createElement('div');
+      e.className = 'empty';
+      e.textContent = 'Todavía no se ha registrado ningún ingreso hoy.';
+      wrap.appendChild(e);
+    } else {
+      list.slice().reverse().forEach(r=>{
+        const li = document.createElement('li');
+        li.className = 'person';
+        const badgeHtml = r.salida
+          ? '<div class="badge fuera">'+r.entrada+' → '+r.salida+'</div>'
+          : '<div class="badge dentro">DENTRO · '+r.entrada+'</div>';
+        li.innerHTML =
+          '<div class="p-info"><div class="p-name"></div><div class="p-area"></div></div>'+
+          badgeHtml;
+        li.querySelector('.p-name').textContent = r.name;
+        li.querySelector('.p-area').textContent = r.area;
+        logList.appendChild(li);
+      });
+      wrap.appendChild(logList);
+    }
+
+    return wrap;
+  }
+
+  function renderVisitantes(){
+    const wrap = document.createElement('div');
+    const date = todayStr();
+    const list = state.visitorsByDate[date] || [];
+    const dentro = list.filter(v=>!v.salida);
+
+    const intro = document.createElement('div');
+    intro.className = 'card';
+    intro.innerHTML = '<h2 class="section-title">Personas que no son personal fijo</h2><p style="margin:0;font-size:13px;color:var(--texto-suave);">Proveedores, cargadores de animales, entrega de alimento u otras visitas ocasionales.</p>';
+    wrap.appendChild(intro);
+
+    const formCard = document.createElement('div');
+    formCard.className = 'card';
+    formCard.innerHTML = '<h2 class="section-title">Registrar entrada</h2>';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.placeholder = 'Nombre de la persona';
+    nameInput.style.marginBottom = '10px';
+
+    const motivoSelect = document.createElement('select');
+    motivoSelect.style.marginBottom = '10px';
+    MOTIVOS_VISITA.forEach(m=>{
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = m;
+      motivoSelect.appendChild(opt);
+    });
+
+    const areaInput = document.createElement('input');
+    areaInput.type = 'text';
+    areaInput.placeholder = 'Área que visita (opcional)';
+    areaInput.setAttribute('list', 'areas-datalist');
+    areaInput.style.marginBottom = '10px';
+
+    const datalist = document.createElement('datalist');
+    datalist.id = 'areas-datalist';
+    state.areas.forEach(a=>{
+      const opt = document.createElement('option');
+      opt.value = a;
+      datalist.appendChild(opt);
+    });
+
+    const cedulaInput = document.createElement('input');
+    cedulaInput.type = 'text';
+    cedulaInput.inputMode = 'numeric';
+    cedulaInput.placeholder = 'Número de cédula (opcional)';
+    cedulaInput.style.marginBottom = '10px';
+
+    const placaInput = document.createElement('input');
+    placaInput.type = 'text';
+    placaInput.placeholder = 'Placa del vehículo (opcional, si entró caminando déjalo vacío)';
+    placaInput.style.marginBottom = '10px';
+
+    const btnAdd = document.createElement('button');
+    btnAdd.className = 'action';
+    btnAdd.textContent = 'Registrar entrada';
+    btnAdd.onclick = ()=>{
+      const name = nameInput.value.trim();
+      if(!name){ showToast('Escribe el nombre de la persona.'); return; }
+      addVisitor({name, motivo: motivoSelect.value, area: areaInput.value.trim(), cedula: cedulaInput.value.trim(), placa: placaInput.value.trim()});
+      nameInput.value=''; areaInput.value=''; cedulaInput.value=''; placaInput.value='';
+    };
+
+    formCard.appendChild(nameInput);
+    formCard.appendChild(motivoSelect);
+    formCard.appendChild(areaInput);
+    formCard.appendChild(datalist);
+    formCard.appendChild(cedulaInput);
+    formCard.appendChild(placaInput);
+    formCard.appendChild(btnAdd);
+    wrap.appendChild(formCard);
+
+    const dentroCard = document.createElement('div');
+    dentroCard.className = 'card';
+    dentroCard.innerHTML = '<h2 class="section-title">Dentro ahora ('+dentro.length+')</h2>';
+    if(dentro.length===0){
+      const e = document.createElement('div');
+      e.className = 'empty';
+      e.textContent = 'No hay visitantes dentro en este momento.';
+      dentroCard.appendChild(e);
+    } else {
+      const ul = document.createElement('ul');
+      ul.className = 'results';
+      dentro.forEach(v=>{
+        const li = document.createElement('li');
+        li.className = 'person';
+        li.innerHTML =
+          '<div class="p-info"><div class="p-name"></div><div class="p-area"></div></div>'+
+          '<div class="badge dentro">DENTRO</div>';
+        li.querySelector('.p-name').textContent = v.name;
+        li.querySelector('.p-area').textContent = [v.motivo, v.area, v.cedula?('C.I. '+v.cedula):'', v.placa].filter(Boolean).join(' · ');
+        li.onclick = ()=> closeVisitor(v.id);
+        ul.appendChild(li);
+      });
+      dentroCard.appendChild(ul);
+    }
+    wrap.appendChild(dentroCard);
+
+    if(list.length>0){
+      const logCard = document.createElement('div');
+      logCard.className = 'card';
+      logCard.innerHTML = '<h2 class="section-title">Registro de hoy</h2>';
+      let html = '<table class="reporte"><thead><tr><th>Nombre</th><th>Cédula</th><th>Motivo</th><th>Entrada</th><th>Salida</th></tr></thead><tbody>';
+      list.forEach(v=>{
+        html += '<tr><td>'+escapeHtml(v.name)+'</td><td>'+escapeHtml(v.cedula||'—')+'</td><td>'+escapeHtml(v.motivo)+'</td><td class="time">'+(v.entrada||'—')+'</td><td class="time">'+(v.salida||'—')+'</td></tr>';
+      });
+      html += '</tbody></table>';
+      logCard.innerHTML += html;
+      wrap.appendChild(logCard);
+    }
+
+    return wrap;
+  }
+
+  function renderHistorial(){
+    const wrap = document.createElement('div');
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<h2 class="section-title">Bitácora de días registrados</h2><div id="historial-body"><div class="empty">Cargando historial…</div></div>';
+    wrap.appendChild(card);
+
+    setTimeout(loadHistorial, 0);
+
+    async function loadHistorial(){
+      const body = document.getElementById('historial-body');
+      if(!body) return;
+      let recordDocs = [], visitorDocs = [];
+      try{
+        const rs = await db.collection(COL.records).orderBy(firebase.firestore.FieldPath.documentId(),'desc').limit(60).get();
+        recordDocs = rs.docs;
+      }catch(e){}
+      try{
+        const vs = await db.collection(COL.visitors).orderBy(firebase.firestore.FieldPath.documentId(),'desc').limit(60).get();
+        visitorDocs = vs.docs;
+      }catch(e){}
+
+      const counts = {};
+      recordDocs.forEach(d=>{
+        const arr = (d.data() && d.data().list) || [];
+        counts[d.id] = counts[d.id] || {personal:0, visitantes:0};
+        counts[d.id].personal = new Set(arr.map(x=>x.staffId)).size;
+      });
+      visitorDocs.forEach(d=>{
+        const arr = (d.data() && d.data().list) || [];
+        counts[d.id] = counts[d.id] || {personal:0, visitantes:0};
+        counts[d.id].visitantes = arr.length;
+      });
+
+      const sorted = Object.keys(counts).sort().reverse();
+
+      if(sorted.length===0){
+        body.innerHTML = '<div class="empty">Todavía no hay días registrados.</div>';
+        return;
+      }
+
+      body.innerHTML = '';
+      sorted.forEach(date=>{
+        const personalCount = counts[date].personal;
+        const visitorCount = counts[date].visitantes;
+        const row = document.createElement('div');
+        row.className = 'staff-row';
+        const info = document.createElement('div');
+        info.innerHTML = '<div style="font-weight:700;">'+formatDateEs(date)+'</div>'+
+          '<div class="meta">'+personalCount+' del personal · '+visitorCount+' visitantes</div>';
+        const btn = document.createElement('button');
+        btn.className = 'link-btn';
+        btn.textContent = 'Ver detalle';
+        btn.onclick = ()=>{
+          state.reportDate = date;
+          subscribeRecords(date);
+          subscribeVisitors(date);
+          state.tab = 'reporte';
+          render();
+        };
+        row.appendChild(info);
+        row.appendChild(btn);
+        body.appendChild(row);
+      });
+    }
+
+    return wrap;
+  }
+
+  function formatDateEs(dateStr){
+    const parts = dateStr.split('-');
+    if(parts.length!==3) return dateStr;
+    const d = new Date(Number(parts[0]), Number(parts[1])-1, Number(parts[2]));
+    return d.toLocaleDateString('es-EC', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+  }
+
+  function renderReporte(){
+    const wrap = document.createElement('div');
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<label class="field-label">Fecha</label>';
+    const dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.value = state.reportDate;
+    dateInput.onchange = (e)=>{
+      state.reportDate = e.target.value;
+      subscribeRecords(state.reportDate);
+      subscribeVisitors(state.reportDate);
+      render();
+    };
+    card.appendChild(dateInput);
+    wrap.appendChild(card);
+
+    const list = state.recordsByDate[state.reportDate] || [];
+    const visitorList = state.visitorsByDate[state.reportDate] || [];
+
+    if(list.length===0 && visitorList.length===0){
+      const empty = document.createElement('div');
+      empty.className = 'card empty';
+      empty.textContent = 'No hay registros de ingreso para esta fecha.';
+      wrap.appendChild(empty);
+      return wrap;
+    }
+
+    if(list.length===0){
+      const empty = document.createElement('div');
+      empty.className = 'card empty';
+      empty.textContent = 'No hay ingresos de personal para esta fecha.';
+      wrap.appendChild(empty);
+    }
+
+    const byArea = {};
+    list.forEach(r=>{
+      if(!byArea[r.area]) byArea[r.area] = [];
+      byArea[r.area].push(r);
+    });
+
+    Object.keys(byArea).sort().forEach(area=>{
+      const g = document.createElement('div');
+      g.className = 'area-group card';
+      const rows = byArea[area];
+      let html = '<h3>'+area+' <span class="n">'+new Set(rows.map(r=>r.staffId)).size+'</span></h3>';
+      html += '<table class="reporte"><thead><tr><th>Nombre</th><th>Entrada</th><th>Salida</th><th>Horas</th></tr></thead><tbody>';
+      buildPersonRows(rows).forEach(pr=>{
+        const cls = pr.isTotal ? 'total-row' : (pr.extra ? 'extra' : '');
+        html += '<tr'+(cls?' class="'+cls+'"':'')+'><td>'+escapeHtml(pr.name)+'</td><td class="time">'+pr.entrada+'</td><td class="time">'+pr.salida+'</td><td class="time">'+pr.horas+'</td></tr>';
+      });
+      html += '</tbody></table>';
+      g.innerHTML = html;
+      wrap.appendChild(g);
+    });
+
+    if(list.length>0){
+      const actions = document.createElement('div');
+      actions.className = 'card row wrap';
+      const btnCsv = document.createElement('button');
+      btnCsv.className = 'action';
+      btnCsv.textContent = 'Descargar CSV del personal';
+      btnCsv.onclick = ()=>{
+        let csv = 'Fecha,Área,Nombre,Entrada,Salida,Horas trabajadas\n';
+        Object.keys(byArea).sort().forEach(area=>{
+          buildPersonRows(byArea[area]).forEach(pr=>{
+            csv += [state.reportDate, area, pr.name, pr.entrada, pr.salida, pr.horas].map(csvEscape).join(',')+'\n';
+          });
+        });
+        downloadFile('asistencia_'+state.reportDate+'.csv', csv, 'text/csv');
+      };
+      actions.appendChild(btnCsv);
+
+      const btnPdf = document.createElement('button');
+      btnPdf.className = 'action secundario';
+      btnPdf.textContent = 'Generar PDF';
+      btnPdf.onclick = ()=>{
+        const sections = Object.keys(byArea).sort().map(area=>({
+          heading: area,
+          headers: ['Nombre','Entrada','Salida','Horas'],
+          rows: buildPersonRows(byArea[area]).map(pr=>[pr.name, pr.entrada, pr.salida, pr.horas])
+        }));
+        generarPdf('asistencia_'+state.reportDate+'.pdf', 'Reporte de asistencia · Personal', state.reportDate, sections);
+      };
+      actions.appendChild(btnPdf);
+      wrap.appendChild(actions);
+    }
+
+    if(visitorList.length>0){
+      const vCard = document.createElement('div');
+      vCard.className = 'area-group card';
+      let html = '<h3>Visitantes ocasionales <span class="n">'+visitorList.length+'</span></h3>';
+      html += '<table class="reporte"><thead><tr><th>Nombre</th><th>Cédula</th><th>Motivo</th><th>Área</th><th>Entrada</th><th>Salida</th></tr></thead><tbody>';
+      visitorList.forEach(v=>{
+        html += '<tr><td>'+escapeHtml(v.name)+'</td><td>'+escapeHtml(v.cedula||'—')+'</td><td>'+escapeHtml(v.motivo)+'</td><td>'+escapeHtml(v.area||'—')+'</td><td class="time">'+(v.entrada||'—')+'</td><td class="time">'+(v.salida||'—')+'</td></tr>';
+      });
+      html += '</tbody></table>';
+      vCard.innerHTML = html;
+      wrap.appendChild(vCard);
+
+      const vActions = document.createElement('div');
+      vActions.className = 'card row wrap';
+      const btnCsvV = document.createElement('button');
+      btnCsvV.className = 'action secundario';
+      btnCsvV.textContent = 'Descargar CSV de visitantes';
+      btnCsvV.onclick = ()=>{
+        let csv = 'Fecha,Nombre,Cédula,Motivo,Área,Placa,Entrada,Salida\n';
+        visitorList.forEach(v=>{
+          csv += [state.reportDate, v.name, v.cedula||'', v.motivo, v.area, v.placa||'', v.entrada||'', v.salida||''].map(csvEscape).join(',')+'\n';
+        });
+        downloadFile('visitantes_'+state.reportDate+'.csv', csv, 'text/csv');
+      };
+      vActions.appendChild(btnCsvV);
+
+      const btnPdfV = document.createElement('button');
+      btnPdfV.className = 'action secundario';
+      btnPdfV.textContent = 'Generar PDF de visitantes';
+      btnPdfV.onclick = ()=>{
+        const sections = [{
+          heading: null,
+          headers: ['Nombre','Cédula','Motivo','Área','Entrada','Salida'],
+          rows: visitorList.map(v=>[v.name, v.cedula||'—', v.motivo, v.area||'—', v.entrada||'—', v.salida||'—'])
+        }];
+        generarPdf('visitantes_'+state.reportDate+'.pdf', 'Reporte de visitantes ocasionales', state.reportDate, sections);
+      };
+      vActions.appendChild(btnPdfV);
+      wrap.appendChild(vActions);
+    }
+
+    return wrap;
+  }
+
+  function renderComedor(){
+    const wrap = document.createElement('div');
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<label class="field-label">Fecha</label>';
+    const dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.value = state.comedorDate;
+    dateInput.onchange = (e)=>{
+      state.comedorDate = e.target.value;
+      subscribeRecords(state.comedorDate);
+      render();
+    };
+    card.appendChild(dateInput);
+    wrap.appendChild(card);
+
+    const list = state.recordsByDate[state.comedorDate] || [];
+    const uniquePeople = {};
+    list.forEach(r=>{ uniquePeople[r.staffId] = r; });
+    const people = Object.values(uniquePeople);
+
+    const byArea = {};
+    people.forEach(r=>{
+      byArea[r.area] = (byArea[r.area]||0)+1;
+    });
+
+    const summary = document.createElement('div');
+    summary.className = 'card';
+    let html = '<h2 class="section-title">Almuerzos a preparar — '+state.comedorDate+'</h2>';
+    if(people.length===0){
+      html += '<div class="empty">Nadie ha ingresado en esta fecha todavía.</div>';
+    } else {
+      html += '<table class="reporte"><thead><tr><th>Área</th><th>Personas</th></tr></thead><tbody>';
+      Object.keys(byArea).sort().forEach(area=>{
+        html += '<tr><td>'+area+'</td><td class="time">'+byArea[area]+'</td></tr>';
+      });
+      html += '<tr><td><strong>Total</strong></td><td class="time"><strong>'+people.length+'</strong></td></tr>';
+      html += '</tbody></table>';
+    }
+    summary.innerHTML = html;
+    wrap.appendChild(summary);
+
+    if(people.length>0){
+      const actions = document.createElement('div');
+      actions.className = 'card';
+      actions.innerHTML = '<label class="field-label">Texto para enviar al comedor</label>';
+      const ta = document.createElement('textarea');
+      ta.className = 'export';
+      let txt = 'ALMUERZOS · '+state.comedorDate+'\n\n';
+      Object.keys(byArea).sort().forEach(area=>{
+        txt += area+': '+byArea[area]+'\n';
+      });
+      txt += '\nTotal: '+people.length;
+      ta.value = txt;
+      ta.readOnly = true;
+      actions.appendChild(ta);
+
+      const row = document.createElement('div');
+      row.className = 'row wrap';
+      row.style.marginTop = '10px';
+      const btnCopy = document.createElement('button');
+      btnCopy.className = 'action secundario';
+      btnCopy.textContent = 'Copiar texto';
+      btnCopy.onclick = async ()=>{
+        try{ await navigator.clipboard.writeText(txt); showToast('Texto copiado.'); }
+        catch(e){ ta.select(); showToast('Selecciona y copia manualmente.'); }
+      };
+      const btnDown = document.createElement('button');
+      btnDown.className = 'action';
+      btnDown.textContent = 'Descargar .txt';
+      btnDown.onclick = ()=> downloadFile('comedor_'+state.comedorDate+'.txt', txt, 'text/plain');
+      row.appendChild(btnCopy);
+      row.appendChild(btnDown);
+
+      const btnPdf = document.createElement('button');
+      btnPdf.className = 'action secundario';
+      btnPdf.textContent = 'Generar PDF';
+      btnPdf.onclick = ()=>{
+        const rows = Object.keys(byArea).sort().map(area=>[area, String(byArea[area])]);
+        rows.push(['Total', String(people.length)]);
+        const sections = [{ heading: null, headers: ['Área','Personas'], rows }];
+        generarPdf('comedor_'+state.comedorDate+'.pdf', 'Almuerzos a preparar', state.comedorDate, sections);
+      };
+      row.appendChild(btnPdf);
+
+      const btnWa = document.createElement('button');
+      btnWa.className = 'action';
+      btnWa.style.background = '#3FA25A';
+      btnWa.textContent = 'Enviar por WhatsApp';
+      btnWa.onclick = ()=>{
+        const url = 'https://wa.me/?text=' + encodeURIComponent(txt);
+        const a = document.createElement('a');
+        a.href = url; a.target = '_blank'; a.rel = 'noopener';
+        document.body.appendChild(a); a.click();
+        setTimeout(()=> document.body.removeChild(a), 200);
+      };
+      row.appendChild(btnWa);
+
+      const waLink = document.createElement('a');
+      waLink.href = 'https://wa.me/?text=' + encodeURIComponent(txt);
+      waLink.target = '_blank';
+      waLink.rel = 'noopener';
+      waLink.textContent = 'Si no se abrió solo, toca aquí para enviar por WhatsApp';
+      waLink.style.cssText = 'display:block;margin-top:8px;font-size:12.5px;color:var(--verde);text-decoration:underline;';
+      actions.appendChild(row);
+      actions.appendChild(waLink);
+      wrap.appendChild(actions);
+    }
+
+    return wrap;
+  }
+
+  function renderPersonal(){
+    const wrap = document.createElement('div');
+
+    const pinCard = document.createElement('div');
+    pinCard.className = 'card';
+    pinCard.innerHTML = '<h2 class="section-title">PINes de acceso</h2><p style="margin:0 0 10px;font-size:12.5px;color:var(--texto-suave);">Por seguridad no se muestran los PINes actuales. Escribe unos nuevos para reemplazarlos.</p>';
+    const pinGuardiaInput = document.createElement('input');
+    pinGuardiaInput.type = 'text';
+    pinGuardiaInput.inputMode = 'numeric';
+    pinGuardiaInput.placeholder = 'Nuevo PIN de guardias';
+    pinGuardiaInput.style.marginBottom = '10px';
+    const pinAdminInput = document.createElement('input');
+    pinAdminInput.type = 'text';
+    pinAdminInput.inputMode = 'numeric';
+    pinAdminInput.placeholder = 'Nuevo PIN de administración';
+    pinAdminInput.style.marginBottom = '10px';
+    const btnSavePins = document.createElement('button');
+    btnSavePins.className = 'action secundario';
+    btnSavePins.textContent = 'Guardar PINes';
+    btnSavePins.onclick = async ()=>{
+      const g = pinGuardiaInput.value.trim(), a = pinAdminInput.value.trim();
+      if(!g || !a){ showToast('Completa ambos PINes.'); return; }
+      if(g === a){ showToast('Los PINes deben ser distintos.'); return; }
+      await savePins(g, a);
+      pinGuardiaInput.value=''; pinAdminInput.value='';
+    };
+    pinCard.appendChild(pinGuardiaInput);
+    pinCard.appendChild(pinAdminInput);
+    pinCard.appendChild(btnSavePins);
+    wrap.appendChild(pinCard);
+
+    const addCard = document.createElement('div');
+    addCard.className = 'card';
+    addCard.innerHTML = '<h2 class="section-title">Agregar persona</h2>';
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.placeholder = 'Nombre completo';
+    nameInput.style.marginBottom = '10px';
+    const areaSelect = document.createElement('select');
+    state.areas.forEach(a=>{
+      const opt = document.createElement('option');
+      opt.value = a; opt.textContent = a;
+      areaSelect.appendChild(opt);
+    });
+    const btnAdd = document.createElement('button');
+    btnAdd.className = 'action';
+    btnAdd.textContent = 'Agregar';
+    btnAdd.style.marginTop = '10px';
+    btnAdd.onclick = async ()=>{
+      const name = nameInput.value.trim();
+      if(!name){ showToast('Escribe un nombre.'); return; }
+      state.staff.push({id: uid(), name, area: areaSelect.value});
+      await saveStaff();
+      nameInput.value = '';
+      render();
+      showToast(name+' agregado.');
+    };
+    addCard.appendChild(nameInput);
+    addCard.appendChild(areaSelect);
+    addCard.appendChild(btnAdd);
+    wrap.appendChild(addCard);
+
+    const areaCard = document.createElement('div');
+    areaCard.className = 'card';
+    areaCard.innerHTML = '<h2 class="section-title">Agregar área</h2>';
+    const areaInput = document.createElement('input');
+    areaInput.type = 'text';
+    areaInput.placeholder = 'Nombre del área';
+    const btnAddArea = document.createElement('button');
+    btnAddArea.className = 'action secundario';
+    btnAddArea.textContent = 'Agregar área';
+    btnAddArea.style.marginTop = '10px';
+    btnAddArea.onclick = async ()=>{
+      const a = areaInput.value.trim();
+      if(!a) return;
+      if(state.areas.includes(a)){ showToast('Esa área ya existe.'); return; }
+      state.areas.push(a);
+      await saveAreas();
+      areaInput.value = '';
+      render();
+    };
+    areaCard.appendChild(areaInput);
+    areaCard.appendChild(btnAddArea);
+    wrap.appendChild(areaCard);
+
+    const listCard = document.createElement('div');
+    listCard.className = 'card';
+    listCard.innerHTML = '<h2 class="section-title">Personal registrado ('+state.staff.length+')</h2>';
+    const byArea = {};
+    state.staff.forEach(p=>{
+      if(!byArea[p.area]) byArea[p.area] = [];
+      byArea[p.area].push(p);
+    });
+    Object.keys(byArea).sort().forEach(area=>{
+      const h = document.createElement('div');
+      h.style.marginTop = '14px';
+      h.innerHTML = '<div style="font-weight:700;font-size:13px;color:var(--barro-osc);margin-bottom:4px;">'+area+'</div>';
+      byArea[area].forEach(p=>{
+        const row = document.createElement('div');
+        row.className = 'staff-row';
+        row.innerHTML = '<div></div>';
+        row.querySelector('div').textContent = p.name;
+        const del = document.createElement('button');
+        del.className = 'del';
+        del.textContent = 'Eliminar';
+        del.onclick = async ()=>{
+          state.staff = state.staff.filter(x=>x.id!==p.id);
+          await saveStaff();
+          render();
+        };
+        row.appendChild(del);
+        h.appendChild(row);
+      });
+      listCard.appendChild(h);
+    });
+    wrap.appendChild(listCard);
+
+    return wrap;
+  }
+
+  function calcMinutos(entrada, salida){
+    if(!entrada || !salida) return null;
+    const [eh, em] = entrada.split(':').map(Number);
+    const [sh, sm] = salida.split(':').map(Number);
+    let mins = (sh*60+sm) - (eh*60+em);
+    if(mins < 0) mins += 24*60;
+    return mins;
+  }
+
+  function minsToLabel(mins){
+    if(mins==null) return null;
+    const h = Math.floor(mins/60);
+    const m = mins % 60;
+    return h + 'h ' + String(m).padStart(2,'0') + 'm';
+  }
+
+  function calcHoras(entrada, salida){
+    return minsToLabel(calcMinutos(entrada, salida));
+  }
+
+  // Agrupa las sesiones (entrada/salida) de un área por persona.
+  // Si alguien reingresó (turno extra), cada sesión queda como su propia fila
+  // bajo el mismo nombre, y se agrega una fila de total al final.
+  function buildPersonRows(records){
+    const byPerson = {};
+    const order = [];
+    records.forEach(r=>{
+      if(!byPerson[r.staffId]){ byPerson[r.staffId] = []; order.push(r.staffId); }
+      byPerson[r.staffId].push(r);
+    });
+    const rows = [];
+    order.forEach(staffId=>{
+      const sessions = byPerson[staffId].slice().sort((a,b)=>(a.entrada||'').localeCompare(b.entrada||''));
+      let totalMins = 0;
+      sessions.forEach((s,idx)=>{
+        const mins = calcMinutos(s.entrada, s.salida);
+        if(mins!=null) totalMins += mins;
+        rows.push({
+          name: idx===0 ? sessions[0].name : sessions[0].name + ' (turno extra)',
+          entrada: s.entrada || '—',
+          salida: s.salida || '—',
+          horas: minsToLabel(mins) || '—',
+          extra: idx>0
+        });
+      });
+      if(sessions.length>1){
+        rows.push({
+          name: 'Total ' + sessions[0].name,
+          entrada: '', salida: '', horas: minsToLabel(totalMins) || '—', isTotal: true
+        });
+      }
+    });
+    return rows;
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderLockScreen(){
+    const app = document.getElementById('app');
+    app.innerHTML = '';
+    const outer = document.createElement('div');
+    outer.id = 'lock-screen';
+    const card = document.createElement('div');
+    card.className = 'lock-card';
+    card.innerHTML = '<h1>Portería · Control de Acceso</h1><p>Ingresa el PIN para continuar</p>';
+    const input = document.createElement('input');
+    input.type = 'password';
+    input.inputMode = 'numeric';
+    input.maxLength = 8;
+    input.placeholder = '••••';
+    const err = document.createElement('div');
+    err.className = 'err';
+    err.textContent = state.loginError || '';
+    const btn = document.createElement('button');
+    btn.className = 'action';
+    btn.style.width = '100%';
+    btn.textContent = 'Entrar';
+    const tryLogin = async ()=>{
+      const val = input.value.trim();
+      if(!val) return;
+      if(!state.pins.guardiaHash || !state.pins.adminHash){
+        state.loginError = 'Conectando con la nube, espera un momento…';
+        render();
+        return;
+      }
+      const hash = await sha256Hex(val);
+      if(hash === state.pins.guardiaHash){
+        state.session = {role:'guardia'};
+        localStorage.setItem('porteria_session', 'guardia');
+        state.loginError = '';
+        render();
+      } else if(hash === state.pins.adminHash){
+        state.session = {role:'admin'};
+        localStorage.setItem('porteria_session', 'admin');
+        state.loginError = '';
+        render();
+      } else {
+        state.loginError = 'PIN incorrecto.';
+        render();
+      }
+    };
+    btn.onclick = tryLogin;
+    input.onkeydown = (e)=>{ if(e.key==='Enter') tryLogin(); };
+    card.appendChild(input);
+    card.appendChild(err);
+    card.appendChild(btn);
+    outer.appendChild(card);
+    app.appendChild(outer);
+    setTimeout(()=> input.focus(), 0);
+  }
+
+  function logout(){
+    state.session = null;
+    localStorage.removeItem('porteria_session');
+    render();
+  }
+
+  const savedRole = localStorage.getItem('porteria_session');
+  if(savedRole==='guardia' || savedRole==='admin'){ state.session = {role: savedRole}; }
+
+  bootstrapAndListen();
+})();
+</script>
+</body>
+</html>

@@ -716,7 +716,7 @@
         li.className = 'person';
         li.innerHTML =
           '<div class="p-info"><div class="p-name"></div><div class="p-area"></div></div>'+
-          '<div class="badge dentro">DENTRO</div>';
+          '<div class="badge fuera">Registrar salida</div>';
         li.querySelector('.p-name').textContent = v.name;
         li.querySelector('.p-area').textContent = [v.motivo, v.area, v.cedula?('C.I. '+v.cedula):'', v.placa].filter(Boolean).join(' · ');
         li.onclick = ()=> closeVisitor(v.id);
@@ -730,12 +730,30 @@
       const logCard = document.createElement('div');
       logCard.className = 'card';
       logCard.innerHTML = '<h2 class="section-title">Registro de hoy</h2>';
-      let html = '<table class="reporte"><thead><tr><th>Nombre</th><th>Cédula</th><th>Motivo</th><th>Entrada</th><th>Salida</th></tr></thead><tbody>';
+      const table = document.createElement('table');
+      table.className = 'reporte';
+      table.innerHTML = '<thead><tr><th>Nombre</th><th>Cédula</th><th>Motivo</th><th>Entrada</th><th>Salida</th><th></th></tr></thead>';
+      const tbody = document.createElement('tbody');
       list.forEach(v=>{
-        html += '<tr><td>'+escapeHtml(v.name)+'</td><td>'+escapeHtml(v.cedula||'—')+'</td><td>'+escapeHtml(v.motivo)+'</td><td class="time">'+(v.entrada||'—')+'</td><td class="time">'+(v.salida||'—')+'</td></tr>';
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>'+escapeHtml(v.name)+'</td>'+
+          '<td>'+escapeHtml(v.cedula||'—')+'</td>'+
+          '<td>'+escapeHtml(v.motivo)+'</td>'+
+          '<td class="time">'+(v.entrada||'—')+'</td>'+
+          '<td class="time">'+(v.salida||'—')+'</td>'+
+          '<td></td>';
+        if(!v.salida){
+          const btn = document.createElement('button');
+          btn.className = 'link-btn';
+          btn.textContent = 'Registrar salida';
+          btn.onclick = ()=> closeVisitor(v.id);
+          tr.lastElementChild.appendChild(btn);
+        }
+        tbody.appendChild(tr);
       });
-      html += '</tbody></table>';
-      logCard.innerHTML += html;
+      table.appendChild(tbody);
+      logCard.appendChild(table);
       wrap.appendChild(logCard);
     }
 

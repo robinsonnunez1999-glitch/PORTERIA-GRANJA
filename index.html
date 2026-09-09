@@ -178,7 +178,11 @@
     {id:'s11', name:'César Pinchao', area:'Sitio 3'},
     {id:'s12', name:'Daniel Taquez', area:'Sitio 3'},
     {id:'s13', name:'Daniel Macías', area:'Lavado'},
-    {id:'s14', name:'Carlos Lucas', area:'Seguridad'}
+    {id:'s14', name:'Carlos Lucas', area:'Seguridad'},
+    {id:'s15', name:'Andrés Castillo', area:'Administración', resident:true},
+    {id:'s16', name:'Mayra Barragán', area:'Administración', resident:true},
+    {id:'s17', name:'Richard López', area:'Administración', resident:true},
+    {id:'s18', name:'Robinson Núñez', area:'Administración', resident:true}
   ];
 
   let state = {
@@ -193,7 +197,9 @@
     comedorDate: todayStr(),
     session: null,       // {role: 'guardia'|'admin'}
     pins: {guardiaHash:null, adminHash:null},
-    loginError: ''
+    loginError: '',
+    residentesAbiertos: {},  // {staffId: 'YYYY-MM-DD' del día en que se abrió su ingreso}
+    guardias: []             // [{id, nombre, pinHash}]
   };
 
   function todayStr(){
@@ -243,6 +249,18 @@
         const [gh, ah] = await Promise.all([sha256Hex('1234'), sha256Hex('9090')]);
         await db.collection(COL.meta).doc('auth').set({guardiaHash: gh, adminHash: ah});
       }
+    });
+
+    // Residentes con ingreso abierto (se arrastra entre días hasta que registren salida)
+    db.collection(COL.meta).doc('residentes').onSnapshot(snap=>{
+      state.residentesAbiertos = (snap.exists && snap.data().open) || {};
+      render();
+    });
+
+    // Guardias con PIN individual (para saber quién registró cada movimiento)
+    db.collection(COL.meta).doc('guardias').onSnapshot(snap=>{
+      state.guardias = (snap.exists && snap.data().list) || [];
+      render();
     });
 
     subscribeRecords(todayStr());
@@ -305,7 +323,7 @@
     if(!state.visitorsByDate[date]) state.visitorsByDate[date] = [];
     state.visitorsByDate[date].push({
       id: uid(), name: data.name, motivo: data.motivo, area: data.area,
-      cedula: data.cedula || '', placa: data.placa || '', entrada: nowTime(), salida: null
+      cedula: data.cedula || '', placa: data.placa || '', entrada: nowTime(), entradaPor: actorName(), salida: null, salidaPor: null
     });
     await saveVisitors(date);
     showToast(data.name+' registró entrada · '+nowTime());
@@ -318,6 +336,7 @@
     const v = list.find(x=>x.id===visitorId && !x.salida);
     if(v){
       v.salida = nowTime();
+      v.salidaPor = actorName();
       await saveVisitors(date);
       showToast(v.name+' registró salida · '+v.salida);
       render();
@@ -337,6 +356,10 @@
   }
 
   function isInside(personId, date){
+    const person = state.staff.find(p=>p.id===personId);
+    if(person && person.resident){
+      return !!state.residentesAbiertos[personId];
+    }
     return !!getOpenSession(personId, date);
   }
 
@@ -344,6 +367,11 @@
     const date = todayStr();
     if(isInside(person.id, date)) await registrarSalidaStaff(person);
     else await registrarEntradaStaff(person);
+  }
+
+  async function saveResidentesAbiertos(){
+    try{ await db.collection(COL.meta).doc('residentes').set({open: state.residentesAbiertos}); }
+    catch(e){ showToast('No se pudo guardar el estado de residentes.'); }
   }
 
   async function registrarEntradaStaff(person){
@@ -355,25 +383,80 @@
     }
     state.recordsByDate[date].push({
       staffId: person.id, name: person.name, area: person.area,
-      entrada: nowTime(), salida: null
+      entrada: nowTime(), entradaPor: actorName(), salida: null, salidaPor: null
     });
     await saveRecords(date);
+    if(person.resident){
+      state.residentesAbiertos[person.id] = date;
+      await saveResidentesAbiertos();
+    }
     const n = getSessions(person.id, date).length;
     showToast(person.name + (n>1 ? ' registró un nuevo ingreso · ' : ' registró entrada · ') + nowTime());
     render();
   }
 
   async function registrarSalidaStaff(person){
-    const date = todayStr();
-    const open = getOpenSession(person.id, date);
+    const today = todayStr();
+
+    if(person.resident){
+      const origen = state.residentesAbiertos[person.id];
+      if(!origen){
+        showToast(person.name + ' no tiene una entrada abierta.');
+        return;
+      }
+      let arr;
+      if(state.recordsByDate[origen]){
+        arr = state.recordsByDate[origen];
+      } else {
+        try{
+          const snap = await db.collection(COL.records).doc(origen).get();
+          arr = (snap.exists && snap.data().list) || [];
+        }catch(e){ showToast('No se pudo leer la entrada original.'); return; }
+      }
+      let sess = null;
+      for(let i=arr.length-1;i>=0;i--){ if(arr[i].staffId===person.id && !arr[i].salida){ sess = arr[i]; break; } }
+      if(!sess){
+        // Estado inconsistente: limpiar y avisar
+        delete state.residentesAbiertos[person.id];
+        await saveResidentesAbiertos();
+        showToast(person.name + ' no tenía una entrada abierta. Se limpió su estado.');
+        render();
+        return;
+      }
+      sess.salida = nowTime();
+      sess.salidaPor = actorName();
+      if(origen !== today) sess.salidaFecha = today;
+      state.recordsByDate[origen] = arr;
+      try{ await db.collection(COL.records).doc(origen).set({list: arr}); }
+      catch(e){ showToast('No se pudo guardar. Revisa tu internet.'); return; }
+      delete state.residentesAbiertos[person.id];
+      await saveResidentesAbiertos();
+      showToast(person.name + ' registró salida · ' + sess.salida);
+      render();
+      return;
+    }
+
+    const open = getOpenSession(person.id, today);
     if(!open){
       showToast(person.name + ' no tiene una entrada abierta.');
       return;
     }
     open.salida = nowTime();
-    await saveRecords(date);
+    open.salidaPor = actorName();
+    await saveRecords(today);
     showToast(person.name + ' registró salida · ' + open.salida);
     render();
+  }
+
+  async function saveGuardias(){
+    try{ await db.collection(COL.meta).doc('guardias').set({list: state.guardias}); }
+    catch(e){ showToast('No se pudo guardar los guardias.'); }
+  }
+
+  function actorName(){
+    if(!state.session) return 'Desconocido';
+    if(state.session.role==='admin') return 'Administración';
+    return state.session.guardName || 'Guardia';
   }
 
   let toastTimer = null;
@@ -619,7 +702,7 @@
           '<div class="p-info"><div class="p-name"></div><div class="p-area"></div></div>'+
           badgeHtml;
         li.querySelector('.p-name').textContent = r.name;
-        li.querySelector('.p-area').textContent = r.area;
+        li.querySelector('.p-area').textContent = r.area + (r.entradaPor ? ' · Registró: '+r.entradaPor+(r.salidaPor?' / '+r.salidaPor:'') : '');
         logList.appendChild(li);
       });
       wrap.appendChild(logList);
@@ -882,10 +965,10 @@
       g.className = 'area-group card';
       const rows = byArea[area];
       let html = '<h3>'+area+' <span class="n">'+new Set(rows.map(r=>r.staffId)).size+'</span></h3>';
-      html += '<table class="reporte"><thead><tr><th>Nombre</th><th>Entrada</th><th>Salida</th><th>Horas</th></tr></thead><tbody>';
+      html += '<table class="reporte"><thead><tr><th>Nombre</th><th>Entrada</th><th>Ingresó</th><th>Salida</th><th>Salió</th><th>Horas</th></tr></thead><tbody>';
       buildPersonRows(rows).forEach(pr=>{
         const cls = pr.isTotal ? 'total-row' : (pr.extra ? 'extra' : '');
-        html += '<tr'+(cls?' class="'+cls+'"':'')+'><td>'+escapeHtml(pr.name)+'</td><td class="time">'+pr.entrada+'</td><td class="time">'+pr.salida+'</td><td class="time">'+pr.horas+'</td></tr>';
+        html += '<tr'+(cls?' class="'+cls+'"':'')+'><td>'+escapeHtml(pr.name)+'</td><td class="time">'+pr.entrada+'</td><td>'+escapeHtml(pr.entradaPor||'')+'</td><td class="time">'+pr.salida+'</td><td>'+escapeHtml(pr.salidaPor||'')+'</td><td class="time">'+pr.horas+'</td></tr>';
       });
       html += '</tbody></table>';
       g.innerHTML = html;
@@ -899,10 +982,10 @@
       btnCsv.className = 'action';
       btnCsv.textContent = 'Descargar CSV del personal';
       btnCsv.onclick = ()=>{
-        let csv = 'Fecha,Área,Nombre,Entrada,Salida,Horas trabajadas\n';
+        let csv = 'Fecha,Área,Nombre,Entrada,Ingresó,Salida,Salió,Horas trabajadas\n';
         Object.keys(byArea).sort().forEach(area=>{
           buildPersonRows(byArea[area]).forEach(pr=>{
-            csv += [state.reportDate, area, pr.name, pr.entrada, pr.salida, pr.horas].map(csvEscape).join(',')+'\n';
+            csv += [state.reportDate, area, pr.name, pr.entrada, pr.entradaPor, pr.salida, pr.salidaPor, pr.horas].map(csvEscape).join(',')+'\n';
           });
         });
         downloadFile('asistencia_'+state.reportDate+'.csv', csv, 'text/csv');
@@ -915,8 +998,8 @@
       btnPdf.onclick = ()=>{
         const sections = Object.keys(byArea).sort().map(area=>({
           heading: area,
-          headers: ['Nombre','Entrada','Salida','Horas'],
-          rows: buildPersonRows(byArea[area]).map(pr=>[pr.name, pr.entrada, pr.salida, pr.horas])
+          headers: ['Nombre','Entrada','Ingresó','Salida','Salió','Horas'],
+          rows: buildPersonRows(byArea[area]).map(pr=>[pr.name, pr.entrada, pr.entradaPor||'', pr.salida, pr.salidaPor||'', pr.horas])
         }));
         generarPdf('asistencia_'+state.reportDate+'.pdf', 'Reporte de asistencia · Personal', state.reportDate, sections);
       };
@@ -928,9 +1011,9 @@
       const vCard = document.createElement('div');
       vCard.className = 'area-group card';
       let html = '<h3>Visitantes ocasionales <span class="n">'+visitorList.length+'</span></h3>';
-      html += '<table class="reporte"><thead><tr><th>Nombre</th><th>Cédula</th><th>Motivo</th><th>Área</th><th>Entrada</th><th>Salida</th></tr></thead><tbody>';
+      html += '<table class="reporte"><thead><tr><th>Nombre</th><th>Cédula</th><th>Motivo</th><th>Área</th><th>Entrada</th><th>Ingresó</th><th>Salida</th><th>Salió</th></tr></thead><tbody>';
       visitorList.forEach(v=>{
-        html += '<tr><td>'+escapeHtml(v.name)+'</td><td>'+escapeHtml(v.cedula||'—')+'</td><td>'+escapeHtml(v.motivo)+'</td><td>'+escapeHtml(v.area||'—')+'</td><td class="time">'+(v.entrada||'—')+'</td><td class="time">'+(v.salida||'—')+'</td></tr>';
+        html += '<tr><td>'+escapeHtml(v.name)+'</td><td>'+escapeHtml(v.cedula||'—')+'</td><td>'+escapeHtml(v.motivo)+'</td><td>'+escapeHtml(v.area||'—')+'</td><td class="time">'+(v.entrada||'—')+'</td><td>'+escapeHtml(v.entradaPor||'—')+'</td><td class="time">'+(v.salida||'—')+'</td><td>'+escapeHtml(v.salidaPor||'—')+'</td></tr>';
       });
       html += '</tbody></table>';
       vCard.innerHTML = html;
@@ -942,9 +1025,9 @@
       btnCsvV.className = 'action secundario';
       btnCsvV.textContent = 'Descargar CSV de visitantes';
       btnCsvV.onclick = ()=>{
-        let csv = 'Fecha,Nombre,Cédula,Motivo,Área,Placa,Entrada,Salida\n';
+        let csv = 'Fecha,Nombre,Cédula,Motivo,Área,Placa,Entrada,Ingresó,Salida,Salió\n';
         visitorList.forEach(v=>{
-          csv += [state.reportDate, v.name, v.cedula||'', v.motivo, v.area, v.placa||'', v.entrada||'', v.salida||''].map(csvEscape).join(',')+'\n';
+          csv += [state.reportDate, v.name, v.cedula||'', v.motivo, v.area, v.placa||'', v.entrada||'', v.entradaPor||'', v.salida||'', v.salidaPor||''].map(csvEscape).join(',')+'\n';
         });
         downloadFile('visitantes_'+state.reportDate+'.csv', csv, 'text/csv');
       };
@@ -956,8 +1039,8 @@
       btnPdfV.onclick = ()=>{
         const sections = [{
           heading: null,
-          headers: ['Nombre','Cédula','Motivo','Área','Entrada','Salida'],
-          rows: visitorList.map(v=>[v.name, v.cedula||'—', v.motivo, v.area||'—', v.entrada||'—', v.salida||'—'])
+          headers: ['Nombre','Cédula','Motivo','Área','Entrada','Ingresó','Salida','Salió'],
+          rows: visitorList.map(v=>[v.name, v.cedula||'—', v.motivo, v.area||'—', v.entrada||'—', v.entradaPor||'—', v.salida||'—', v.salidaPor||'—'])
         }];
         generarPdf('visitantes_'+state.reportDate+'.pdf', 'Reporte de visitantes ocasionales', state.reportDate, sections);
       };
@@ -1111,6 +1194,62 @@
     pinCard.appendChild(btnSavePins);
     wrap.appendChild(pinCard);
 
+    const guardCard = document.createElement('div');
+    guardCard.className = 'card';
+    guardCard.innerHTML = '<h2 class="section-title">Guardias (PIN individual)</h2><p style="margin:0 0 10px;font-size:12.5px;color:var(--texto-suave);">Cada guardia entra con su propio PIN, así se sabe quién registró cada movimiento.</p>';
+    const gNameInput = document.createElement('input');
+    gNameInput.type = 'text';
+    gNameInput.placeholder = 'Nombre del guardia';
+    gNameInput.style.marginBottom = '10px';
+    const gPinInput = document.createElement('input');
+    gPinInput.type = 'text';
+    gPinInput.inputMode = 'numeric';
+    gPinInput.placeholder = 'PIN para este guardia';
+    gPinInput.style.marginBottom = '10px';
+    const btnAddGuard = document.createElement('button');
+    btnAddGuard.className = 'action secundario';
+    btnAddGuard.textContent = 'Agregar guardia';
+    btnAddGuard.onclick = async ()=>{
+      const nombre = gNameInput.value.trim();
+      const pin = gPinInput.value.trim();
+      if(!nombre || !pin){ showToast('Completa nombre y PIN.'); return; }
+      const pinHash = await sha256Hex(pin);
+      if(state.guardias.some(g=>g.pinHash===pinHash) || pinHash===state.pins.adminHash || pinHash===state.pins.guardiaHash){
+        showToast('Ese PIN ya está en uso, elige otro.'); return;
+      }
+      state.guardias.push({id: uid(), nombre, pinHash});
+      await saveGuardias();
+      gNameInput.value=''; gPinInput.value='';
+      render();
+      showToast(nombre+' agregado como guardia.');
+    };
+    guardCard.appendChild(gNameInput);
+    guardCard.appendChild(gPinInput);
+    guardCard.appendChild(btnAddGuard);
+
+    if(state.guardias.length>0){
+      const gList = document.createElement('div');
+      gList.style.marginTop = '14px';
+      state.guardias.forEach(g=>{
+        const row = document.createElement('div');
+        row.className = 'staff-row';
+        row.innerHTML = '<div></div>';
+        row.querySelector('div').textContent = g.nombre;
+        const del = document.createElement('button');
+        del.className = 'del';
+        del.textContent = 'Eliminar';
+        del.onclick = async ()=>{
+          state.guardias = state.guardias.filter(x=>x.id!==g.id);
+          await saveGuardias();
+          render();
+        };
+        row.appendChild(del);
+        gList.appendChild(row);
+      });
+      guardCard.appendChild(gList);
+    }
+    wrap.appendChild(guardCard);
+
     const addCard = document.createElement('div');
     addCard.className = 'card';
     addCard.innerHTML = '<h2 class="section-title">Agregar persona</h2>';
@@ -1240,7 +1379,9 @@
         rows.push({
           name: idx===0 ? sessions[0].name : sessions[0].name + ' (turno extra)',
           entrada: s.entrada || '—',
+          entradaPor: s.entradaPor || '—',
           salida: s.salida || '—',
+          salidaPor: s.salidaPor || '—',
           horas: minsToLabel(mins) || '—',
           extra: idx>0
         });
@@ -1248,7 +1389,7 @@
       if(sessions.length>1){
         rows.push({
           name: 'Total ' + sessions[0].name,
-          entrada: '', salida: '', horas: minsToLabel(totalMins) || '—', isTotal: true
+          entrada: '', entradaPor:'', salida: '', salidaPor:'', horas: minsToLabel(totalMins) || '—', isTotal: true
         });
       }
     });
@@ -1288,14 +1429,20 @@
         return;
       }
       const hash = await sha256Hex(val);
-      if(hash === state.pins.guardiaHash){
-        state.session = {role:'guardia'};
-        localStorage.setItem('porteria_session', 'guardia');
+      const guardia = state.guardias.find(g=>g.pinHash===hash);
+      if(hash === state.pins.adminHash){
+        state.session = {role:'admin'};
+        localStorage.setItem('porteria_session', JSON.stringify(state.session));
         state.loginError = '';
         render();
-      } else if(hash === state.pins.adminHash){
-        state.session = {role:'admin'};
-        localStorage.setItem('porteria_session', 'admin');
+      } else if(guardia){
+        state.session = {role:'guardia', guardId: guardia.id, guardName: guardia.nombre};
+        localStorage.setItem('porteria_session', JSON.stringify(state.session));
+        state.loginError = '';
+        render();
+      } else if(hash === state.pins.guardiaHash){
+        state.session = {role:'guardia', guardId:null, guardName:'Guardia'};
+        localStorage.setItem('porteria_session', JSON.stringify(state.session));
         state.loginError = '';
         render();
       } else {
@@ -1319,8 +1466,13 @@
     render();
   }
 
-  const savedRole = localStorage.getItem('porteria_session');
-  if(savedRole==='guardia' || savedRole==='admin'){ state.session = {role: savedRole}; }
+  const savedSession = localStorage.getItem('porteria_session');
+  if(savedSession){
+    try{
+      const parsed = JSON.parse(savedSession);
+      if(parsed && (parsed.role==='guardia' || parsed.role==='admin')) state.session = parsed;
+    }catch(e){}
+  }
 
   bootstrapAndListen();
 })();

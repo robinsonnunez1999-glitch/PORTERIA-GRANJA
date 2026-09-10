@@ -618,8 +618,8 @@
   // ---------- RENDER ----------
   const TABS_BY_ROLE = {
     guardia: ['porteria','visitantes','telefonos'],
-    administrativo: ['visitantes','reporte','historial','comedor','telefonos','personal'],
-    admin: ['porteria','visitantes','reporte','historial','comedor','telefonos','personal','configuracion']
+    administrativo: ['visitantes','reporte','comedor','telefonos','personal'],
+    admin: ['porteria','visitantes','reporte','comedor','telefonos','personal','configuracion']
   };
   const ROLE_LABELS = {guardia:'Guardia', administrativo:'Administrativo', admin:'Super usuario'};
 
@@ -662,7 +662,7 @@
   function renderTabs(){
     const nav = document.createElement('nav');
     nav.className = 'tabs';
-    const ALL_TABS = [['porteria','Portería'],['visitantes','Visitantes'],['reporte','Reporte'],['historial','Historial'],['comedor','Comedor'],['telefonos','Teléfonos'],['personal','Personal'],['configuracion','Configuración']];
+    const ALL_TABS = [['porteria','Portería'],['visitantes','Visitantes'],['reporte','Reporte'],['comedor','Comedor'],['telefonos','Teléfonos'],['personal','Personal'],['configuracion','Configuración']];
     const allowed = TABS_BY_ROLE[state.session.role] || [];
     const tabs = ALL_TABS.filter(([key])=>allowed.includes(key));
     tabs.forEach(([key,label])=>{

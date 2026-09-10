@@ -200,7 +200,10 @@
     loginError: '',
     residentesAbiertos: {},  // {staffId: 'YYYY-MM-DD' del día en que se abrió su ingreso}
     guardias: [],            // [{id, nombre, pin, pinHash}]
-    administrativos: []      // [{id, nombre, pin, pinHash}]
+    administrativos: [],     // [{id, nombre, pin, pinHash}]
+    autorizadosTelefono: [], // [{id, nombre, autorizadoPor}]
+    telefonoPrompt: null,    // {person} mientras se pregunta si deja o ingresa el teléfono
+    telefonoDate: todayStr()
   };
 
   function todayStr(){
@@ -267,6 +270,12 @@
     // Administrativos (ven Visitantes, Reporte, Historial, Comedor y Personal)
     db.collection(COL.meta).doc('administrativos').onSnapshot(snap=>{
       state.administrativos = (snap.exists && snap.data().list) || [];
+      render();
+    });
+
+    // Lista de personas autorizadas para ingresar teléfono
+    db.collection(COL.meta).doc('telefono_autorizados').onSnapshot(snap=>{
+      state.autorizadosTelefono = (snap.exists && snap.data().list) || [];
       render();
     });
 
@@ -381,17 +390,24 @@
     catch(e){ showToast('No se pudo guardar el estado de residentes.'); }
   }
 
-  async function registrarEntradaStaff(person){
+  async function registrarEntradaStaff(person, telefonoInfo){
     const date = todayStr();
     if(!state.recordsByDate[date]) state.recordsByDate[date] = [];
     if(isInside(person.id, date)){
       showToast(person.name + ' ya está dentro.');
       return;
     }
-    state.recordsByDate[date].push({
+    const sesion = {
       staffId: person.id, name: person.name, area: person.area,
       entrada: nowTime(), entradaPor: actorName(), salida: null, salidaPor: null
-    });
+    };
+    if(telefonoInfo && telefonoInfo.estado==='dejado'){
+      sesion.telefono = 'dejado';
+    } else if(telefonoInfo && telefonoInfo.estado==='ingresado'){
+      sesion.telefono = 'ingresado';
+      sesion.telefonoAutorizadoPor = telefonoInfo.autorizadoPor || 'Sin autorización registrada';
+    }
+    state.recordsByDate[date].push(sesion);
     await saveRecords(date);
     if(person.resident){
       state.residentesAbiertos[person.id] = date;
@@ -463,6 +479,11 @@
   async function saveAdministrativos(){
     try{ await db.collection(COL.meta).doc('administrativos').set({list: state.administrativos}); }
     catch(e){ showToast('No se pudo guardar los administrativos.'); }
+  }
+
+  async function saveAutorizadosTelefono(){
+    try{ await db.collection(COL.meta).doc('telefono_autorizados').set({list: state.autorizadosTelefono}); }
+    catch(e){ showToast('No se pudo guardar la lista de autorizados.'); }
   }
 
   function actorName(){
@@ -537,11 +558,57 @@
     setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
   }
 
+  async function resolverTelefonoYEntrar(dejaTelefono){
+    const prompt = state.telefonoPrompt;
+    if(!prompt) return;
+    const person = prompt.person;
+    state.telefonoPrompt = null;
+
+    if(dejaTelefono){
+      await registrarEntradaStaff(person, {estado:'dejado'});
+      return;
+    }
+
+    const norm = normalize(person.name);
+    const autorizado = state.autorizadosTelefono.find(a=>normalize(a.nombre)===norm);
+    if(autorizado){
+      await registrarEntradaStaff(person, {estado:'ingresado', autorizadoPor: autorizado.autorizadoPor});
+    } else {
+      const quien = window.prompt(person.name+' no está en la lista de autorizados para ingresar teléfono.\n¿Quién autoriza el ingreso?');
+      await registrarEntradaStaff(person, {estado:'ingresado', autorizadoPor: (quien && quien.trim()) || 'Sin autorización registrada'});
+    }
+  }
+
+  function renderTelefonoModal(){
+    const prompt = state.telefonoPrompt;
+    if(!prompt) return null;
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(34,38,31,.55);display:flex;align-items:center;justify-content:center;z-index:60;padding:20px;';
+    const card = document.createElement('div');
+    card.style.cssText = 'background:#fff;border-radius:8px;padding:24px 20px;max-width:340px;width:100%;text-align:center;';
+    card.innerHTML = '<h2 style="margin:0 0 6px;font-size:16px;">'+escapeHtml(prompt.person.name)+'</h2><p style="margin:0 0 18px;font-size:13.5px;color:var(--texto-suave);">¿Deja el teléfono en garita?</p>';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:10px;';
+    const btnSi = document.createElement('button');
+    btnSi.className = 'action grow';
+    btnSi.textContent = 'Sí, lo deja';
+    btnSi.onclick = ()=> resolverTelefonoYEntrar(true);
+    const btnNo = document.createElement('button');
+    btnNo.className = 'action grow secundario';
+    btnNo.textContent = 'No, lo ingresa';
+    btnNo.onclick = ()=> resolverTelefonoYEntrar(false);
+    row.appendChild(btnSi);
+    row.appendChild(btnNo);
+    card.appendChild(row);
+    overlay.appendChild(card);
+    return overlay;
+  }
+
   // ---------- RENDER ----------
   const TABS_BY_ROLE = {
-    guardia: ['porteria','visitantes'],
-    administrativo: ['visitantes','reporte','historial','comedor','personal'],
-    admin: ['porteria','visitantes','reporte','historial','comedor','personal','configuracion']
+    guardia: ['porteria','visitantes','telefonos'],
+    administrativo: ['visitantes','reporte','historial','comedor','telefonos','personal'],
+    admin: ['porteria','visitantes','reporte','historial','comedor','telefonos','personal','configuracion']
   };
   const ROLE_LABELS = {guardia:'Guardia', administrativo:'Administrativo', admin:'Super usuario'};
 
@@ -559,9 +626,12 @@
     else if(state.tab === 'reporte') main.appendChild(renderReporte());
     else if(state.tab === 'historial') main.appendChild(renderHistorial());
     else if(state.tab === 'comedor') main.appendChild(renderComedor());
+    else if(state.tab === 'telefonos') main.appendChild(renderTelefonos());
     else if(state.tab === 'personal') main.appendChild(renderPersonal());
     else if(state.tab === 'configuracion') main.appendChild(renderConfiguracion());
     app.appendChild(main);
+    const modal = renderTelefonoModal();
+    if(modal) app.appendChild(modal);
   }
 
   function renderHeader(){
@@ -581,7 +651,7 @@
   function renderTabs(){
     const nav = document.createElement('nav');
     nav.className = 'tabs';
-    const ALL_TABS = [['porteria','Portería'],['visitantes','Visitantes'],['reporte','Reporte'],['historial','Historial'],['comedor','Comedor'],['personal','Personal'],['configuracion','Configuración']];
+    const ALL_TABS = [['porteria','Portería'],['visitantes','Visitantes'],['reporte','Reporte'],['historial','Historial'],['comedor','Comedor'],['telefonos','Teléfonos'],['personal','Personal'],['configuracion','Configuración']];
     const allowed = TABS_BY_ROLE[state.session.role] || [];
     const tabs = ALL_TABS.filter(([key])=>allowed.includes(key));
     tabs.forEach(([key,label])=>{
@@ -686,9 +756,13 @@
         li.querySelector('.p-name').textContent = p.name;
         li.querySelector('.p-area').textContent = p.area;
         li.onclick = ()=>{
-          if(state.porteriaMode==='entrada') registrarEntradaStaff(p);
-          else registrarSalidaStaff(p);
+          if(state.porteriaMode==='entrada'){
+            state.telefonoPrompt = {person: p};
+          } else {
+            registrarSalidaStaff(p);
+          }
           state.search='';
+          render();
         };
         ulEl.appendChild(li);
       });
@@ -1234,6 +1308,112 @@
     return wrap;
   }
 
+  function renderTelefonos(){
+    const wrap = document.createElement('div');
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<label class="field-label">Fecha</label>';
+    const dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.value = state.telefonoDate;
+    dateInput.onchange = (e)=>{
+      state.telefonoDate = e.target.value;
+      subscribeRecords(state.telefonoDate);
+      render();
+    };
+    card.appendChild(dateInput);
+    wrap.appendChild(card);
+
+    const list = state.recordsByDate[state.telefonoDate] || [];
+    const ingresan = list.filter(r=>r.telefono==='ingresado');
+    const dejan = list.filter(r=>r.telefono==='dejado');
+
+    const summary = document.createElement('div');
+    summary.className = 'card';
+    let html = '<h2 class="section-title">Control de teléfonos — '+state.telefonoDate+'</h2>';
+    if(ingresan.length===0 && dejan.length===0){
+      html += '<div class="empty">Todavía no hay registros de teléfono para esta fecha.</div>';
+    } else {
+      html += '<h3 style="font-size:13px;margin:10px 0 6px;color:var(--barro-osc);">Ingresan teléfono ('+ingresan.length+')</h3>';
+      if(ingresan.length===0){
+        html += '<div class="empty" style="padding:10px 0;">Nadie ingresó teléfono.</div>';
+      } else {
+        html += '<table class="reporte"><thead><tr><th>Nombre</th><th>Autorizó</th><th>Área</th></tr></thead><tbody>';
+        ingresan.forEach(r=>{
+          html += '<tr><td>'+escapeHtml(r.name)+'</td><td>'+escapeHtml(r.telefonoAutorizadoPor||'—')+'</td><td>'+escapeHtml(r.area)+'</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+      html += '<h3 style="font-size:13px;margin:16px 0 6px;color:var(--barro-osc);">Dejan teléfono en garita ('+dejan.length+')</h3>';
+      if(dejan.length===0){
+        html += '<div class="empty" style="padding:10px 0;">Nadie dejó teléfono en garita.</div>';
+      } else {
+        html += '<table class="reporte"><thead><tr><th>Nombre</th><th>Área</th></tr></thead><tbody>';
+        dejan.forEach(r=>{
+          html += '<tr><td>'+escapeHtml(r.name)+'</td><td>'+escapeHtml(r.area)+'</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+    }
+    summary.innerHTML = html;
+    wrap.appendChild(summary);
+
+    if(ingresan.length>0 || dejan.length>0){
+      const actions = document.createElement('div');
+      actions.className = 'card';
+      actions.innerHTML = '<label class="field-label">Texto para enviar por WhatsApp</label>';
+      const ta = document.createElement('textarea');
+      ta.className = 'export';
+      let txt = 'CONTROL DE TELÉFONOS · '+state.telefonoDate+'\n\n';
+      txt += 'Ingresan teléfono:\n';
+      txt += ingresan.length===0 ? '  (nadie)\n' : ingresan.map(r=>'  '+r.name+' — autoriza: '+(r.telefonoAutorizadoPor||'—')+' — '+r.area).join('\n')+'\n';
+      txt += '\nDejan en garita:\n';
+      txt += dejan.length===0 ? '  (nadie)\n' : dejan.map(r=>'  '+r.name+' — '+r.area).join('\n')+'\n';
+      ta.value = txt;
+      ta.readOnly = true;
+      actions.appendChild(ta);
+
+      const row = document.createElement('div');
+      row.className = 'row wrap';
+      row.style.marginTop = '10px';
+      const btnCopy = document.createElement('button');
+      btnCopy.className = 'action secundario';
+      btnCopy.textContent = 'Copiar texto';
+      btnCopy.onclick = async ()=>{
+        try{ await navigator.clipboard.writeText(txt); showToast('Texto copiado.'); }
+        catch(e){ ta.select(); showToast('Selecciona y copia manualmente.'); }
+      };
+      const btnPdf = document.createElement('button');
+      btnPdf.className = 'action secundario';
+      btnPdf.textContent = 'Generar PDF';
+      btnPdf.onclick = ()=>{
+        const sections = [
+          {heading:'Ingresan teléfono', headers:['Nombre','Autorizó','Área'], rows: ingresan.map(r=>[r.name, r.telefonoAutorizadoPor||'—', r.area])},
+          {heading:'Dejan en garita', headers:['Nombre','Área'], rows: dejan.map(r=>[r.name, r.area])}
+        ];
+        generarPdf('telefonos_'+state.telefonoDate+'.pdf', 'Control de teléfonos', state.telefonoDate, sections);
+      };
+      const btnWa = document.createElement('button');
+      btnWa.className = 'action';
+      btnWa.style.background = '#3FA25A';
+      btnWa.textContent = 'Enviar por WhatsApp';
+      btnWa.onclick = ()=>{
+        const url = 'https://wa.me/?text=' + encodeURIComponent(txt);
+        const a = document.createElement('a');
+        a.href = url; a.target = '_blank'; a.rel = 'noopener';
+        document.body.appendChild(a); a.click();
+        setTimeout(()=> document.body.removeChild(a), 200);
+      };
+      row.appendChild(btnCopy);
+      row.appendChild(btnPdf);
+      row.appendChild(btnWa);
+      actions.appendChild(row);
+      wrap.appendChild(actions);
+    }
+
+    return wrap;
+  }
+
   function buildCuentaCard(opts){
     // opts: {title, desc, list, saveFn, roleName}
     const card = document.createElement('div');
@@ -1375,6 +1555,57 @@
 
   function renderPersonal(){
     const wrap = document.createElement('div');
+
+    const telCard = document.createElement('div');
+    telCard.className = 'card';
+    telCard.innerHTML = '<h2 class="section-title">Autorizados para ingresar teléfono</h2><p style="margin:0 0 10px;font-size:12.5px;color:var(--texto-suave);">Si alguien de esta lista ingresa su teléfono, el reporte usa automáticamente quién lo autorizó.</p>';
+    const telNameInput = document.createElement('input');
+    telNameInput.type = 'text';
+    telNameInput.placeholder = 'Nombre de la persona (personal)';
+    telNameInput.style.marginBottom = '10px';
+    const telAutorizaInput = document.createElement('input');
+    telAutorizaInput.type = 'text';
+    telAutorizaInput.placeholder = 'Quién autoriza';
+    telAutorizaInput.style.marginBottom = '10px';
+    const btnAddTel = document.createElement('button');
+    btnAddTel.className = 'action secundario';
+    btnAddTel.textContent = 'Agregar';
+    btnAddTel.onclick = async ()=>{
+      const nombre = telNameInput.value.trim();
+      const autorizadoPor = telAutorizaInput.value.trim();
+      if(!nombre || !autorizadoPor){ showToast('Completa nombre y quién autoriza.'); return; }
+      state.autorizadosTelefono.push({id: uid(), nombre, autorizadoPor});
+      await saveAutorizadosTelefono();
+      telNameInput.value=''; telAutorizaInput.value='';
+      render();
+      showToast(nombre+' agregado a la lista de autorizados.');
+    };
+    telCard.appendChild(telNameInput);
+    telCard.appendChild(telAutorizaInput);
+    telCard.appendChild(btnAddTel);
+    if(state.autorizadosTelefono.length>0){
+      const telList = document.createElement('div');
+      telList.style.marginTop = '14px';
+      state.autorizadosTelefono.forEach(t=>{
+        const row = document.createElement('div');
+        row.className = 'staff-row';
+        row.innerHTML = '<div><div class="u-name" style="font-weight:600;"></div><div class="meta">Autoriza: <span class="u-auth"></span></div></div>';
+        row.querySelector('.u-name').textContent = t.nombre;
+        row.querySelector('.u-auth').textContent = t.autorizadoPor;
+        const del = document.createElement('button');
+        del.className = 'del';
+        del.textContent = 'Eliminar';
+        del.onclick = async ()=>{
+          state.autorizadosTelefono = state.autorizadosTelefono.filter(x=>x.id!==t.id);
+          await saveAutorizadosTelefono();
+          render();
+        };
+        row.appendChild(del);
+        telList.appendChild(row);
+      });
+      telCard.appendChild(telList);
+    }
+    wrap.appendChild(telCard);
 
     const addCard = document.createElement('div');
     addCard.className = 'card';

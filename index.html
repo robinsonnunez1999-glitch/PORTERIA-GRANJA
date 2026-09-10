@@ -406,6 +406,8 @@
     } else if(telefonoInfo && telefonoInfo.estado==='ingresado'){
       sesion.telefono = 'ingresado';
       sesion.telefonoAutorizadoPor = telefonoInfo.autorizadoPor || 'Sin autorización registrada';
+    } else if(telefonoInfo && telefonoInfo.estado==='sin_celular'){
+      sesion.telefono = 'sin_celular';
     }
     state.recordsByDate[date].push(sesion);
     await saveRecords(date);
@@ -558,13 +560,17 @@
     setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
   }
 
-  async function resolverTelefonoYEntrar(dejaTelefono){
+  async function resolverTelefonoYEntrar(opcion){
     const prompt = state.telefonoPrompt;
     if(!prompt) return;
     const person = prompt.person;
     state.telefonoPrompt = null;
 
-    if(dejaTelefono){
+    if(opcion==='sin_celular'){
+      await registrarEntradaStaff(person, {estado:'sin_celular'});
+      return;
+    }
+    if(opcion==='deja'){
       await registrarEntradaStaff(person, {estado:'dejado'});
       return;
     }
@@ -586,20 +592,25 @@
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(34,38,31,.55);display:flex;align-items:center;justify-content:center;z-index:60;padding:20px;';
     const card = document.createElement('div');
     card.style.cssText = 'background:#fff;border-radius:8px;padding:24px 20px;max-width:340px;width:100%;text-align:center;';
-    card.innerHTML = '<h2 style="margin:0 0 6px;font-size:16px;">'+escapeHtml(prompt.person.name)+'</h2><p style="margin:0 0 18px;font-size:13.5px;color:var(--texto-suave);">¿Deja el teléfono en garita?</p>';
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;gap:10px;';
-    const btnSi = document.createElement('button');
-    btnSi.className = 'action grow';
-    btnSi.textContent = 'Sí, lo deja';
-    btnSi.onclick = ()=> resolverTelefonoYEntrar(true);
-    const btnNo = document.createElement('button');
-    btnNo.className = 'action grow secundario';
-    btnNo.textContent = 'No, lo ingresa';
-    btnNo.onclick = ()=> resolverTelefonoYEntrar(false);
-    row.appendChild(btnSi);
-    row.appendChild(btnNo);
-    card.appendChild(row);
+    card.innerHTML = '<h2 style="margin:0 0 6px;font-size:16px;">'+escapeHtml(prompt.person.name)+'</h2><p style="margin:0 0 18px;font-size:13.5px;color:var(--texto-suave);">¿Qué hace con el teléfono?</p>';
+    const col = document.createElement('div');
+    col.style.cssText = 'display:flex;flex-direction:column;gap:10px;';
+    const btnDeja = document.createElement('button');
+    btnDeja.className = 'action';
+    btnDeja.textContent = 'Deja en garita';
+    btnDeja.onclick = ()=> resolverTelefonoYEntrar('deja');
+    const btnIngresa = document.createElement('button');
+    btnIngresa.className = 'action secundario';
+    btnIngresa.textContent = 'Ingresa teléfono';
+    btnIngresa.onclick = ()=> resolverTelefonoYEntrar('ingresa');
+    const btnSinCelular = document.createElement('button');
+    btnSinCelular.className = 'action secundario';
+    btnSinCelular.textContent = 'Sin celular';
+    btnSinCelular.onclick = ()=> resolverTelefonoYEntrar('sin_celular');
+    col.appendChild(btnDeja);
+    col.appendChild(btnIngresa);
+    col.appendChild(btnSinCelular);
+    card.appendChild(col);
     overlay.appendChild(card);
     return overlay;
   }
@@ -1327,6 +1338,7 @@
     const list = state.recordsByDate[state.telefonoDate] || [];
     const ingresan = list.filter(r=>r.telefono==='ingresado');
     const dejan = list.filter(r=>r.telefono==='dejado');
+    const sinCelular = list.filter(r=>r.telefono==='sin_celular');
 
     const summary = document.createElement('div');
     summary.className = 'card';
@@ -1354,11 +1366,21 @@
         });
         html += '</tbody></table>';
       }
+      html += '<h3 style="font-size:13px;margin:16px 0 6px;color:var(--texto-suave);">Sin celular ('+sinCelular.length+')</h3>';
+      if(sinCelular.length===0){
+        html += '<div class="empty" style="padding:10px 0;">Nadie marcado como sin celular.</div>';
+      } else {
+        html += '<table class="reporte"><thead><tr><th>Nombre</th><th>Área</th></tr></thead><tbody>';
+        sinCelular.forEach(r=>{
+          html += '<tr><td>'+escapeHtml(r.name)+'</td><td>'+escapeHtml(r.area)+'</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
     }
     summary.innerHTML = html;
     wrap.appendChild(summary);
 
-    if(ingresan.length>0 || dejan.length>0){
+    if(ingresan.length>0 || dejan.length>0 || sinCelular.length>0){
       const actions = document.createElement('div');
       actions.className = 'card';
       actions.innerHTML = '<label class="field-label">Texto para enviar por WhatsApp</label>';
@@ -1369,6 +1391,8 @@
       txt += ingresan.length===0 ? '  (nadie)\n' : ingresan.map(r=>'  '+r.name+' — autoriza: '+(r.telefonoAutorizadoPor||'—')+' — '+r.area).join('\n')+'\n';
       txt += '\nDejan en garita:\n';
       txt += dejan.length===0 ? '  (nadie)\n' : dejan.map(r=>'  '+r.name+' — '+r.area).join('\n')+'\n';
+      txt += '\nSin celular:\n';
+      txt += sinCelular.length===0 ? '  (nadie)\n' : sinCelular.map(r=>'  '+r.name+' — '+r.area).join('\n')+'\n';
       ta.value = txt;
       ta.readOnly = true;
       actions.appendChild(ta);
@@ -1389,7 +1413,8 @@
       btnPdf.onclick = ()=>{
         const sections = [
           {heading:'Ingresan teléfono', headers:['Nombre','Autorizó','Área'], rows: ingresan.map(r=>[r.name, r.telefonoAutorizadoPor||'—', r.area])},
-          {heading:'Dejan en garita', headers:['Nombre','Área'], rows: dejan.map(r=>[r.name, r.area])}
+          {heading:'Dejan en garita', headers:['Nombre','Área'], rows: dejan.map(r=>[r.name, r.area])},
+          {heading:'Sin celular', headers:['Nombre','Área'], rows: sinCelular.map(r=>[r.name, r.area])}
         ];
         generarPdf('telefonos_'+state.telefonoDate+'.pdf', 'Control de teléfonos', state.telefonoDate, sections);
       };

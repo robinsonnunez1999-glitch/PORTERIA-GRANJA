@@ -199,7 +199,8 @@
     pins: {guardiaHash:null, adminHash:null},
     loginError: '',
     residentesAbiertos: {},  // {staffId: 'YYYY-MM-DD' del día en que se abrió su ingreso}
-    guardias: []             // [{id, nombre, pinHash}]
+    guardias: [],            // [{id, nombre, pin, pinHash}]
+    administrativos: []      // [{id, nombre, pin, pinHash}]
   };
 
   function todayStr(){
@@ -260,6 +261,12 @@
     // Guardias con PIN individual (para saber quién registró cada movimiento)
     db.collection(COL.meta).doc('guardias').onSnapshot(snap=>{
       state.guardias = (snap.exists && snap.data().list) || [];
+      render();
+    });
+
+    // Administrativos (ven Visitantes, Reporte, Historial, Comedor y Personal)
+    db.collection(COL.meta).doc('administrativos').onSnapshot(snap=>{
+      state.administrativos = (snap.exists && snap.data().list) || [];
       render();
     });
 
@@ -453,9 +460,15 @@
     catch(e){ showToast('No se pudo guardar los guardias.'); }
   }
 
+  async function saveAdministrativos(){
+    try{ await db.collection(COL.meta).doc('administrativos').set({list: state.administrativos}); }
+    catch(e){ showToast('No se pudo guardar los administrativos.'); }
+  }
+
   function actorName(){
     if(!state.session) return 'Desconocido';
     if(state.session.role==='admin') return 'Administración';
+    if(state.session.role==='administrativo') return state.session.nombre || 'Administrativo';
     return state.session.guardName || 'Guardia';
   }
 
@@ -525,11 +538,17 @@
   }
 
   // ---------- RENDER ----------
-  const GUARDIA_TABS = ['porteria','visitantes'];
+  const TABS_BY_ROLE = {
+    guardia: ['porteria','visitantes'],
+    administrativo: ['visitantes','reporte','historial','comedor','personal'],
+    admin: ['porteria','visitantes','reporte','historial','comedor','personal','configuracion']
+  };
+  const ROLE_LABELS = {guardia:'Guardia', administrativo:'Administrativo', admin:'Super usuario'};
 
   function render(){
     if(!state.session){ renderLockScreen(); return; }
-    if(state.session.role==='guardia' && !GUARDIA_TABS.includes(state.tab)){ state.tab = 'porteria'; }
+    const allowed = TABS_BY_ROLE[state.session.role] || [];
+    if(!allowed.includes(state.tab)){ state.tab = allowed[0]; }
     const app = document.getElementById('app');
     app.innerHTML = '';
     app.appendChild(renderHeader());
@@ -541,15 +560,16 @@
     else if(state.tab === 'historial') main.appendChild(renderHistorial());
     else if(state.tab === 'comedor') main.appendChild(renderComedor());
     else if(state.tab === 'personal') main.appendChild(renderPersonal());
+    else if(state.tab === 'configuracion') main.appendChild(renderConfiguracion());
     app.appendChild(main);
   }
 
   function renderHeader(){
     const h = document.createElement('header');
     h.className = 'top';
-    const roleLabel = state.session.role==='admin' ? 'Administración' : 'Guardia';
+    const roleLabel = ROLE_LABELS[state.session.role] || state.session.role;
     h.innerHTML = '<h1>Portería · Control de Acceso</h1><p>'+ new Date().toLocaleDateString('es-EC',{weekday:'long', day:'numeric', month:'long'}) +'</p>'+
-      '<span class="role-badge">'+roleLabel+'</span>';
+      '<span class="role-badge">'+roleLabel+(state.session.nombre?' · '+state.session.nombre:'')+'</span>';
     const logoutBtn = document.createElement('button');
     logoutBtn.className = 'logout-link';
     logoutBtn.textContent = 'Cerrar sesión';
@@ -561,8 +581,9 @@
   function renderTabs(){
     const nav = document.createElement('nav');
     nav.className = 'tabs';
-    let tabs = [['porteria','Portería'],['visitantes','Visitantes'],['reporte','Reporte'],['historial','Historial'],['comedor','Comedor'],['personal','Personal']];
-    if(state.session.role==='guardia'){ tabs = tabs.filter(([key])=>GUARDIA_TABS.includes(key)); }
+    const ALL_TABS = [['porteria','Portería'],['visitantes','Visitantes'],['reporte','Reporte'],['historial','Historial'],['comedor','Comedor'],['personal','Personal'],['configuracion','Configuración']];
+    const allowed = TABS_BY_ROLE[state.session.role] || [];
+    const tabs = ALL_TABS.filter(([key])=>allowed.includes(key));
     tabs.forEach(([key,label])=>{
       const b = document.createElement('button');
       b.textContent = label;
@@ -960,18 +981,46 @@
       byArea[r.area].push(r);
     });
 
+    const isSuper = state.session.role==='admin';
+
     Object.keys(byArea).sort().forEach(area=>{
       const g = document.createElement('div');
       g.className = 'area-group card';
       const rows = byArea[area];
-      let html = '<h3>'+area+' <span class="n">'+new Set(rows.map(r=>r.staffId)).size+'</span></h3>';
-      html += '<table class="reporte"><thead><tr><th>Nombre</th><th>Entrada</th><th>Ingresó</th><th>Salida</th><th>Salió</th><th>Horas</th></tr></thead><tbody>';
+      g.innerHTML = '<h3>'+area+' <span class="n">'+new Set(rows.map(r=>r.staffId)).size+'</span></h3>';
+
+      const table = document.createElement('table');
+      table.className = 'reporte';
+      table.innerHTML = '<thead><tr><th>Nombre</th><th>Entrada</th><th>Ingresó</th><th>Salida</th><th>Salió</th><th>Horas</th>'+(isSuper?'<th></th>':'')+'</tr></thead>';
+      const tbody = document.createElement('tbody');
       buildPersonRows(rows).forEach(pr=>{
-        const cls = pr.isTotal ? 'total-row' : (pr.extra ? 'extra' : '');
-        html += '<tr'+(cls?' class="'+cls+'"':'')+'><td>'+escapeHtml(pr.name)+'</td><td class="time">'+pr.entrada+'</td><td>'+escapeHtml(pr.entradaPor||'')+'</td><td class="time">'+pr.salida+'</td><td>'+escapeHtml(pr.salidaPor||'')+'</td><td class="time">'+pr.horas+'</td></tr>';
+        const tr = document.createElement('tr');
+        if(pr.isTotal) tr.className = 'total-row';
+        else if(pr.extra) tr.className = 'extra';
+        tr.innerHTML =
+          '<td>'+escapeHtml(pr.name)+'</td><td class="time">'+pr.entrada+'</td><td>'+escapeHtml(pr.entradaPor||'')+
+          '</td><td class="time">'+pr.salida+'</td><td>'+escapeHtml(pr.salidaPor||'')+'</td><td class="time">'+pr.horas+'</td>';
+        if(isSuper){
+          const td = document.createElement('td');
+          if(!pr.isTotal){
+            const btnEdit = document.createElement('button');
+            btnEdit.className = 'link-btn';
+            btnEdit.textContent = 'Editar';
+            btnEdit.onclick = ()=> editStaffRecord(state.reportDate, pr.ref);
+            const btnDel = document.createElement('button');
+            btnDel.className = 'link-btn';
+            btnDel.style.color = 'var(--barro)';
+            btnDel.textContent = 'Eliminar';
+            btnDel.onclick = ()=> deleteStaffRecord(state.reportDate, pr.ref);
+            td.appendChild(btnEdit);
+            td.appendChild(btnDel);
+          }
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
       });
-      html += '</tbody></table>';
-      g.innerHTML = html;
+      table.appendChild(tbody);
+      g.appendChild(table);
       wrap.appendChild(g);
     });
 
@@ -1010,13 +1059,35 @@
     if(visitorList.length>0){
       const vCard = document.createElement('div');
       vCard.className = 'area-group card';
-      let html = '<h3>Visitantes ocasionales <span class="n">'+visitorList.length+'</span></h3>';
-      html += '<table class="reporte"><thead><tr><th>Nombre</th><th>Cédula</th><th>Motivo</th><th>Área</th><th>Entrada</th><th>Ingresó</th><th>Salida</th><th>Salió</th></tr></thead><tbody>';
+      vCard.innerHTML = '<h3>Visitantes ocasionales <span class="n">'+visitorList.length+'</span></h3>';
+      const vTable = document.createElement('table');
+      vTable.className = 'reporte';
+      vTable.innerHTML = '<thead><tr><th>Nombre</th><th>Cédula</th><th>Motivo</th><th>Área</th><th>Entrada</th><th>Ingresó</th><th>Salida</th><th>Salió</th>'+(isSuper?'<th></th>':'')+'</tr></thead>';
+      const vTbody = document.createElement('tbody');
       visitorList.forEach(v=>{
-        html += '<tr><td>'+escapeHtml(v.name)+'</td><td>'+escapeHtml(v.cedula||'—')+'</td><td>'+escapeHtml(v.motivo)+'</td><td>'+escapeHtml(v.area||'—')+'</td><td class="time">'+(v.entrada||'—')+'</td><td>'+escapeHtml(v.entradaPor||'—')+'</td><td class="time">'+(v.salida||'—')+'</td><td>'+escapeHtml(v.salidaPor||'—')+'</td></tr>';
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>'+escapeHtml(v.name)+'</td><td>'+escapeHtml(v.cedula||'—')+'</td><td>'+escapeHtml(v.motivo)+'</td><td>'+escapeHtml(v.area||'—')+
+          '</td><td class="time">'+(v.entrada||'—')+'</td><td>'+escapeHtml(v.entradaPor||'—')+'</td><td class="time">'+(v.salida||'—')+'</td><td>'+escapeHtml(v.salidaPor||'—')+'</td>';
+        if(isSuper){
+          const td = document.createElement('td');
+          const btnEdit = document.createElement('button');
+          btnEdit.className = 'link-btn';
+          btnEdit.textContent = 'Editar';
+          btnEdit.onclick = ()=> editVisitorRecord(state.reportDate, v);
+          const btnDel = document.createElement('button');
+          btnDel.className = 'link-btn';
+          btnDel.style.color = 'var(--barro)';
+          btnDel.textContent = 'Eliminar';
+          btnDel.onclick = ()=> deleteVisitorRecord(state.reportDate, v.id);
+          td.appendChild(btnEdit);
+          td.appendChild(btnDel);
+          tr.appendChild(td);
+        }
+        vTbody.appendChild(tr);
       });
-      html += '</tbody></table>';
-      vCard.innerHTML = html;
+      vTable.appendChild(vTbody);
+      vCard.appendChild(vTable);
       wrap.appendChild(vCard);
 
       const vActions = document.createElement('div');
@@ -1163,25 +1234,116 @@
     return wrap;
   }
 
-  function renderPersonal(){
+  function buildCuentaCard(opts){
+    // opts: {title, desc, list, saveFn, roleName}
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<h2 class="section-title">'+opts.title+'</h2><p style="margin:0 0 10px;font-size:12.5px;color:var(--texto-suave);">'+opts.desc+'</p>';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.placeholder = 'Nombre';
+    nameInput.style.marginBottom = '10px';
+    const pinInput = document.createElement('input');
+    pinInput.type = 'text';
+    pinInput.inputMode = 'numeric';
+    pinInput.placeholder = 'PIN';
+    pinInput.style.marginBottom = '10px';
+    const btnAdd = document.createElement('button');
+    btnAdd.className = 'action secundario';
+    btnAdd.textContent = 'Agregar';
+
+    function pinEnUso(hash, excludeId){
+      const enGuardias = state.guardias.some(g=>g.id!==excludeId && g.pinHash===hash);
+      const enAdmins = state.administrativos.some(a=>a.id!==excludeId && a.pinHash===hash);
+      return enGuardias || enAdmins || hash===state.pins.adminHash || hash===state.pins.guardiaHash;
+    }
+
+    btnAdd.onclick = async ()=>{
+      const nombre = nameInput.value.trim();
+      const pin = pinInput.value.trim();
+      if(!nombre || !pin){ showToast('Completa nombre y PIN.'); return; }
+      let hash;
+      try{ hash = await sha256Hex(pin); }
+      catch(e){ showToast('No se pudo procesar el PIN. Usa el link https:// publicado.'); return; }
+      if(pinEnUso(hash, null)){ showToast('Ese PIN ya está en uso, elige otro.'); return; }
+      opts.list.push({id: uid(), nombre, pin, pinHash: hash});
+      await opts.saveFn();
+      nameInput.value=''; pinInput.value='';
+      render();
+      showToast(nombre+' agregado.');
+    };
+    card.appendChild(nameInput);
+    card.appendChild(pinInput);
+    card.appendChild(btnAdd);
+
+    if(opts.list.length>0){
+      const list = document.createElement('div');
+      list.style.marginTop = '14px';
+      opts.list.forEach(u=>{
+        const row = document.createElement('div');
+        row.className = 'staff-row';
+        row.innerHTML = '<div><div class="u-name" style="font-weight:600;"></div><div class="meta">PIN: <span class="u-pin" style="font-family:var(--mono);"></span></div></div>';
+        row.querySelector('.u-name').textContent = u.nombre;
+        row.querySelector('.u-pin').textContent = u.pin || '(oculto)';
+        const btnGroup = document.createElement('div');
+        btnGroup.style.cssText = 'display:flex;gap:14px;';
+        const change = document.createElement('button');
+        change.className = 'del';
+        change.style.color = 'var(--verde)';
+        change.textContent = 'Cambiar PIN';
+        change.onclick = async ()=>{
+          const nuevo = window.prompt('Nuevo PIN para '+u.nombre+':');
+          if(!nuevo) return;
+          const val = nuevo.trim();
+          if(!val){ showToast('PIN vacío, no se cambió nada.'); return; }
+          let hash;
+          try{ hash = await sha256Hex(val); }
+          catch(e){ showToast('No se pudo procesar el PIN. Usa el link https:// publicado.'); return; }
+          if(pinEnUso(hash, u.id)){ showToast('Ese PIN ya está en uso, elige otro.'); return; }
+          u.pin = val; u.pinHash = hash;
+          await opts.saveFn();
+          render();
+          showToast('PIN de '+u.nombre+' actualizado.');
+        };
+        const del = document.createElement('button');
+        del.className = 'del';
+        del.textContent = 'Eliminar';
+        del.onclick = async ()=>{
+          const idx = opts.list.indexOf(u);
+          if(idx>-1) opts.list.splice(idx,1);
+          await opts.saveFn();
+          render();
+        };
+        btnGroup.appendChild(change);
+        btnGroup.appendChild(del);
+        row.appendChild(btnGroup);
+        list.appendChild(row);
+      });
+      card.appendChild(list);
+    }
+    return card;
+  }
+
+  function renderConfiguracion(){
     const wrap = document.createElement('div');
 
     const pinCard = document.createElement('div');
     pinCard.className = 'card';
-    pinCard.innerHTML = '<h2 class="section-title">PINes de acceso</h2><p style="margin:0 0 10px;font-size:12.5px;color:var(--texto-suave);">Por seguridad no se muestran los PINes actuales. Escribe unos nuevos para reemplazarlos.</p>';
+    pinCard.innerHTML = '<h2 class="section-title">PIN de Super usuario y PIN genérico de guardia</h2><p style="margin:0 0 10px;font-size:12.5px;color:var(--texto-suave);">El PIN de administración es tu acceso de super usuario. El PIN de guardias es uno genérico de respaldo; para saber quién registra cada movimiento usa mejor la lista de Guardias individuales de abajo.</p>';
     const pinGuardiaInput = document.createElement('input');
     pinGuardiaInput.type = 'text';
     pinGuardiaInput.inputMode = 'numeric';
-    pinGuardiaInput.placeholder = 'Nuevo PIN de guardias';
+    pinGuardiaInput.placeholder = 'Nuevo PIN genérico de guardias';
     pinGuardiaInput.style.marginBottom = '10px';
     const pinAdminInput = document.createElement('input');
     pinAdminInput.type = 'text';
     pinAdminInput.inputMode = 'numeric';
-    pinAdminInput.placeholder = 'Nuevo PIN de administración';
+    pinAdminInput.placeholder = 'Nuevo PIN de Super usuario';
     pinAdminInput.style.marginBottom = '10px';
     const btnSavePins = document.createElement('button');
     btnSavePins.className = 'action secundario';
-    btnSavePins.textContent = 'Guardar PINes';
+    btnSavePins.textContent = 'Guardar';
     btnSavePins.onclick = async ()=>{
       const g = pinGuardiaInput.value.trim(), a = pinAdminInput.value.trim();
       if(!g || !a){ showToast('Completa ambos PINes.'); return; }
@@ -1194,61 +1356,25 @@
     pinCard.appendChild(btnSavePins);
     wrap.appendChild(pinCard);
 
-    const guardCard = document.createElement('div');
-    guardCard.className = 'card';
-    guardCard.innerHTML = '<h2 class="section-title">Guardias (PIN individual)</h2><p style="margin:0 0 10px;font-size:12.5px;color:var(--texto-suave);">Cada guardia entra con su propio PIN, así se sabe quién registró cada movimiento.</p>';
-    const gNameInput = document.createElement('input');
-    gNameInput.type = 'text';
-    gNameInput.placeholder = 'Nombre del guardia';
-    gNameInput.style.marginBottom = '10px';
-    const gPinInput = document.createElement('input');
-    gPinInput.type = 'text';
-    gPinInput.inputMode = 'numeric';
-    gPinInput.placeholder = 'PIN para este guardia';
-    gPinInput.style.marginBottom = '10px';
-    const btnAddGuard = document.createElement('button');
-    btnAddGuard.className = 'action secundario';
-    btnAddGuard.textContent = 'Agregar guardia';
-    btnAddGuard.onclick = async ()=>{
-      const nombre = gNameInput.value.trim();
-      const pin = gPinInput.value.trim();
-      if(!nombre || !pin){ showToast('Completa nombre y PIN.'); return; }
-      const pinHash = await sha256Hex(pin);
-      if(state.guardias.some(g=>g.pinHash===pinHash) || pinHash===state.pins.adminHash || pinHash===state.pins.guardiaHash){
-        showToast('Ese PIN ya está en uso, elige otro.'); return;
-      }
-      state.guardias.push({id: uid(), nombre, pinHash});
-      await saveGuardias();
-      gNameInput.value=''; gPinInput.value='';
-      render();
-      showToast(nombre+' agregado como guardia.');
-    };
-    guardCard.appendChild(gNameInput);
-    guardCard.appendChild(gPinInput);
-    guardCard.appendChild(btnAddGuard);
+    wrap.appendChild(buildCuentaCard({
+      title: 'Guardias (Portería y Visitantes)',
+      desc: 'Cada guardia entra con su propio nombre y PIN, así se sabe quién registró cada movimiento.',
+      list: state.guardias,
+      saveFn: saveGuardias
+    }));
 
-    if(state.guardias.length>0){
-      const gList = document.createElement('div');
-      gList.style.marginTop = '14px';
-      state.guardias.forEach(g=>{
-        const row = document.createElement('div');
-        row.className = 'staff-row';
-        row.innerHTML = '<div></div>';
-        row.querySelector('div').textContent = g.nombre;
-        const del = document.createElement('button');
-        del.className = 'del';
-        del.textContent = 'Eliminar';
-        del.onclick = async ()=>{
-          state.guardias = state.guardias.filter(x=>x.id!==g.id);
-          await saveGuardias();
-          render();
-        };
-        row.appendChild(del);
-        gList.appendChild(row);
-      });
-      guardCard.appendChild(gList);
-    }
-    wrap.appendChild(guardCard);
+    wrap.appendChild(buildCuentaCard({
+      title: 'Administrativos (Visitantes, Reporte, Historial, Comedor, Personal)',
+      desc: 'Ven y gestionan estas secciones, pero no entran a Configuración ni a Portería.',
+      list: state.administrativos,
+      saveFn: saveAdministrativos
+    }));
+
+    return wrap;
+  }
+
+  function renderPersonal(){
+    const wrap = document.createElement('div');
 
     const addCard = document.createElement('div');
     addCard.className = 'card';
@@ -1339,6 +1465,66 @@
     return wrap;
   }
 
+  function isValidTime(v){
+    return /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+  }
+
+  async function editStaffRecord(date, ref){
+    const nuevaEntrada = window.prompt('Hora de entrada (HH:MM), vacío para dejar igual:', ref.entrada||'');
+    if(nuevaEntrada===null) return;
+    if(nuevaEntrada.trim()){
+      if(!isValidTime(nuevaEntrada.trim())){ showToast('Formato de hora inválido, usa HH:MM.'); return; }
+      ref.entrada = nuevaEntrada.trim();
+    }
+    const nuevaSalida = window.prompt('Hora de salida (HH:MM), vacío para dejar igual, escribe "-" para borrarla:', ref.salida||'');
+    if(nuevaSalida===null){ await saveRecords(date); render(); return; }
+    if(nuevaSalida.trim()==='-'){ ref.salida = null; }
+    else if(nuevaSalida.trim()){
+      if(!isValidTime(nuevaSalida.trim())){ showToast('Formato de hora inválido, usa HH:MM.'); return; }
+      ref.salida = nuevaSalida.trim();
+    }
+    await saveRecords(date);
+    showToast('Registro actualizado.');
+    render();
+  }
+
+  async function deleteStaffRecord(date, ref){
+    if(!window.confirm('¿Eliminar este movimiento de '+ref.name+'? Esta acción no se puede deshacer.')) return;
+    const arr = state.recordsByDate[date] || [];
+    const idx = arr.indexOf(ref);
+    if(idx>-1) arr.splice(idx,1);
+    await saveRecords(date);
+    showToast('Movimiento eliminado.');
+    render();
+  }
+
+  async function editVisitorRecord(date, v){
+    const nuevaEntrada = window.prompt('Hora de entrada (HH:MM), vacío para dejar igual:', v.entrada||'');
+    if(nuevaEntrada===null) return;
+    if(nuevaEntrada.trim()){
+      if(!isValidTime(nuevaEntrada.trim())){ showToast('Formato de hora inválido, usa HH:MM.'); return; }
+      v.entrada = nuevaEntrada.trim();
+    }
+    const nuevaSalida = window.prompt('Hora de salida (HH:MM), vacío para dejar igual, escribe "-" para borrarla:', v.salida||'');
+    if(nuevaSalida===null){ await saveVisitors(date); render(); return; }
+    if(nuevaSalida.trim()==='-'){ v.salida = null; }
+    else if(nuevaSalida.trim()){
+      if(!isValidTime(nuevaSalida.trim())){ showToast('Formato de hora inválido, usa HH:MM.'); return; }
+      v.salida = nuevaSalida.trim();
+    }
+    await saveVisitors(date);
+    showToast('Registro actualizado.');
+    render();
+  }
+
+  async function deleteVisitorRecord(date, id){
+    if(!window.confirm('¿Eliminar esta visita? Esta acción no se puede deshacer.')) return;
+    state.visitorsByDate[date] = (state.visitorsByDate[date]||[]).filter(x=>x.id!==id);
+    await saveVisitors(date);
+    showToast('Visita eliminada.');
+    render();
+  }
+
   function calcMinutos(entrada, salida){
     if(!entrada || !salida) return null;
     const [eh, em] = entrada.split(':').map(Number);
@@ -1383,7 +1569,8 @@
           salida: s.salida || '—',
           salidaPor: s.salidaPor || '—',
           horas: minsToLabel(mins) || '—',
-          extra: idx>0
+          extra: idx>0,
+          ref: s
         });
       });
       if(sessions.length>1){
@@ -1428,8 +1615,16 @@
         render();
         return;
       }
-      const hash = await sha256Hex(val);
+      let hash;
+      try{
+        hash = await sha256Hex(val);
+      }catch(e){
+        state.loginError = 'Este acceso solo funciona en el link https:// publicado.';
+        render();
+        return;
+      }
       const guardia = state.guardias.find(g=>g.pinHash===hash);
+      const administrativo = state.administrativos.find(a=>a.pinHash===hash);
       if(hash === state.pins.adminHash){
         state.session = {role:'admin'};
         localStorage.setItem('porteria_session', JSON.stringify(state.session));
@@ -1437,6 +1632,11 @@
         render();
       } else if(guardia){
         state.session = {role:'guardia', guardId: guardia.id, guardName: guardia.nombre};
+        localStorage.setItem('porteria_session', JSON.stringify(state.session));
+        state.loginError = '';
+        render();
+      } else if(administrativo){
+        state.session = {role:'administrativo', nombre: administrativo.nombre};
         localStorage.setItem('porteria_session', JSON.stringify(state.session));
         state.loginError = '';
         render();
@@ -1470,7 +1670,7 @@
   if(savedSession){
     try{
       const parsed = JSON.parse(savedSession);
-      if(parsed && (parsed.role==='guardia' || parsed.role==='admin')) state.session = parsed;
+      if(parsed && TABS_BY_ROLE[parsed.role]) state.session = parsed;
     }catch(e){}
   }
 

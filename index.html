@@ -2,6 +2,9 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <title>Portería · Control de Acceso</title>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -121,6 +124,7 @@
 
 <script>
 (function(){
+  const APP_VERSION = 'v2026-09-10 23:35';
   // ⚠️ Pega aquí el firebaseConfig de tu proyecto (Firebase console → Configuración del proyecto → Tus apps)
   const firebaseConfig = {
     apiKey: "AIzaSyAzoh4UHDyXVt7lpK82NhSanBs6u89j2U8",
@@ -650,7 +654,8 @@
     h.className = 'top';
     const roleLabel = ROLE_LABELS[state.session.role] || state.session.role;
     h.innerHTML = '<h1>Portería · Control de Acceso</h1><p>'+ new Date().toLocaleDateString('es-EC',{weekday:'long', day:'numeric', month:'long'}) +'</p>'+
-      '<span class="role-badge">'+roleLabel+(state.session.nombre?' · '+state.session.nombre:'')+'</span>';
+      '<span class="role-badge">'+roleLabel+(state.session.nombre?' · '+state.session.nombre:'')+'</span>'+
+      '<span style="display:block;font-size:10px;color:#8FA593;margin-top:4px;">'+APP_VERSION+'</span>';
     const logoutBtn = document.createElement('button');
     logoutBtn.className = 'logout-link';
     logoutBtn.textContent = 'Cerrar sesión';
@@ -1472,10 +1477,11 @@
       try{ hash = await sha256Hex(pin); }
       catch(e){ showToast('No se pudo procesar el PIN. Usa el link https:// publicado.'); return; }
       if(pinEnUso(hash, null)){ showToast('Ese PIN ya está en uso, elige otro.'); return; }
-      opts.list.push({id: uid(), nombre, pin, pinHash: hash});
-      await opts.saveFn();
+      const nuevo = {id: uid(), nombre, pin, pinHash: hash};
+      try{
+        await db.collection(COL.meta).doc(opts.docName).update({list: firebase.firestore.FieldValue.arrayUnion(nuevo)});
+      }catch(e){ showToast('No se pudo guardar. Revisa tu internet.'); return; }
       nameInput.value=''; pinInput.value='';
-      render();
       showToast(nombre+' agregado.');
     };
     card.appendChild(nameInput);
@@ -1498,27 +1504,30 @@
         change.style.color = 'var(--verde)';
         change.textContent = 'Cambiar PIN';
         change.onclick = async ()=>{
-          const nuevo = window.prompt('Nuevo PIN para '+u.nombre+':');
-          if(!nuevo) return;
-          const val = nuevo.trim();
+          const nuevoPin = window.prompt('Nuevo PIN para '+u.nombre+':');
+          if(!nuevoPin) return;
+          const val = nuevoPin.trim();
           if(!val){ showToast('PIN vacío, no se cambió nada.'); return; }
           let hash;
           try{ hash = await sha256Hex(val); }
           catch(e){ showToast('No se pudo procesar el PIN. Usa el link https:// publicado.'); return; }
           if(pinEnUso(hash, u.id)){ showToast('Ese PIN ya está en uso, elige otro.'); return; }
-          u.pin = val; u.pinHash = hash;
-          await opts.saveFn();
-          render();
+          const actualizado = Object.assign({}, u, {pin: val, pinHash: hash});
+          try{
+            const ref = db.collection(COL.meta).doc(opts.docName);
+            await ref.update({list: firebase.firestore.FieldValue.arrayRemove(u)});
+            await ref.update({list: firebase.firestore.FieldValue.arrayUnion(actualizado)});
+          }catch(e){ showToast('No se pudo actualizar. Revisa tu internet.'); return; }
           showToast('PIN de '+u.nombre+' actualizado.');
         };
         const del = document.createElement('button');
         del.className = 'del';
         del.textContent = 'Eliminar';
         del.onclick = async ()=>{
-          const idx = opts.list.indexOf(u);
-          if(idx>-1) opts.list.splice(idx,1);
-          await opts.saveFn();
-          render();
+          if(!window.confirm('¿Eliminar a '+u.nombre+'?')) return;
+          try{
+            await db.collection(COL.meta).doc(opts.docName).update({list: firebase.firestore.FieldValue.arrayRemove(u)});
+          }catch(e){ showToast('No se pudo eliminar. Revisa tu internet.'); }
         };
         btnGroup.appendChild(change);
         btnGroup.appendChild(del);
@@ -1565,14 +1574,16 @@
       title: 'Guardias (Portería y Visitantes)',
       desc: 'Cada guardia entra con su propio nombre y PIN, así se sabe quién registró cada movimiento.',
       list: state.guardias,
-      saveFn: saveGuardias
+      saveFn: saveGuardias,
+      docName: 'guardias'
     }));
 
     wrap.appendChild(buildCuentaCard({
-      title: 'Administrativos (Visitantes, Reporte, Historial, Comedor, Personal)',
+      title: 'Administrativos (Visitantes, Reporte, Comedor, Teléfonos, Personal)',
       desc: 'Ven y gestionan estas secciones, pero no entran a Configuración ni a Portería.',
       list: state.administrativos,
-      saveFn: saveAdministrativos
+      saveFn: saveAdministrativos,
+      docName: 'administrativos'
     }));
 
     return wrap;
@@ -1599,10 +1610,11 @@
       const nombre = telNameInput.value.trim();
       const autorizadoPor = telAutorizaInput.value.trim();
       if(!nombre || !autorizadoPor){ showToast('Completa nombre y quién autoriza.'); return; }
-      state.autorizadosTelefono.push({id: uid(), nombre, autorizadoPor});
-      await saveAutorizadosTelefono();
+      const nuevo = {id: uid(), nombre, autorizadoPor};
+      try{
+        await db.collection(COL.meta).doc('telefono_autorizados').update({list: firebase.firestore.FieldValue.arrayUnion(nuevo)});
+      }catch(e){ showToast('No se pudo guardar. Revisa tu internet.'); return; }
       telNameInput.value=''; telAutorizaInput.value='';
-      render();
       showToast(nombre+' agregado a la lista de autorizados.');
     };
     telCard.appendChild(telNameInput);
@@ -1621,9 +1633,10 @@
         del.className = 'del';
         del.textContent = 'Eliminar';
         del.onclick = async ()=>{
-          state.autorizadosTelefono = state.autorizadosTelefono.filter(x=>x.id!==t.id);
-          await saveAutorizadosTelefono();
-          render();
+          if(!window.confirm('¿Eliminar a '+t.nombre+' de autorizados?')) return;
+          try{
+            await db.collection(COL.meta).doc('telefono_autorizados').update({list: firebase.firestore.FieldValue.arrayRemove(t)});
+          }catch(e){ showToast('No se pudo eliminar. Revisa tu internet.'); }
         };
         row.appendChild(del);
         telList.appendChild(row);
@@ -1631,6 +1644,55 @@
       telCard.appendChild(telList);
     }
     wrap.appendChild(telCard);
+
+    const importCard = document.createElement('div');
+    importCard.className = 'card';
+    importCard.innerHTML = '<h2 class="section-title">Importar varias personas a la vez</h2><p style="margin:0 0 10px;font-size:12.5px;color:var(--texto-suave);">Un renglón por persona: Nombre, Área (y opcionalmente ", residente" al final si vive en la granja). No borra a nadie que ya exista, solo agrega a los que falten.</p>';
+    const importArea = document.createElement('textarea');
+    importArea.className = 'export';
+    importArea.style.minHeight = '160px';
+    importArea.placeholder = 'Yandri Salazar, Administración\nAngel Salvatierra, Jardinería\nAndres Castillo, planta de balanceado, residente';
+    const btnImport = document.createElement('button');
+    btnImport.className = 'action secundario';
+    btnImport.style.marginTop = '10px';
+    btnImport.textContent = 'Importar';
+    btnImport.onclick = async ()=>{
+      const lineas = importArea.value.split('\n').map(l=>l.trim()).filter(Boolean);
+      if(lineas.length===0){ showToast('Pega al menos una línea.'); return; }
+      let snap;
+      try{ snap = await db.collection(COL.meta).doc('staff').get(); }
+      catch(e){ showToast('No se pudo leer la lista actual. Revisa tu internet.'); return; }
+      const actuales = (snap.exists && snap.data().list) || [];
+      const nombresActuales = new Set(actuales.map(p=>normalize(p.name)));
+      const areasNuevas = new Set(state.areas);
+      const nuevos = [];
+      lineas.forEach(linea=>{
+        const partes = linea.split(',').map(x=>x.trim()).filter(Boolean);
+        if(partes.length<2) return;
+        const nombre = partes[0];
+        const area = partes[1];
+        const esResidente = partes[2] && /resident/i.test(partes[2]);
+        if(nombresActuales.has(normalize(nombre))) return; // ya existe, no duplicar
+        nombresActuales.add(normalize(nombre));
+        areasNuevas.add(area);
+        const persona = {id: uid(), name: nombre, area: area};
+        if(esResidente) persona.resident = true;
+        nuevos.push(persona);
+      });
+      if(nuevos.length===0){ showToast('No había nadie nuevo para agregar (o el formato no era Nombre, Área).'); return; }
+      try{
+        await db.collection(COL.meta).doc('staff').update({list: firebase.firestore.FieldValue.arrayUnion(...nuevos)});
+        const areasFaltantes = Array.from(areasNuevas).filter(a=>!state.areas.includes(a));
+        if(areasFaltantes.length>0){
+          await db.collection(COL.meta).doc('areas').update({list: firebase.firestore.FieldValue.arrayUnion(...areasFaltantes)});
+        }
+      }catch(e){ showToast('No se pudo guardar. Revisa tu internet.'); return; }
+      importArea.value = '';
+      showToast(nuevos.length+' personas importadas.');
+    };
+    importCard.appendChild(importArea);
+    importCard.appendChild(btnImport);
+    wrap.appendChild(importCard);
 
     const addCard = document.createElement('div');
     addCard.className = 'card';
@@ -1652,10 +1714,11 @@
     btnAdd.onclick = async ()=>{
       const name = nameInput.value.trim();
       if(!name){ showToast('Escribe un nombre.'); return; }
-      state.staff.push({id: uid(), name, area: areaSelect.value});
-      await saveStaff();
+      const nuevaPersona = {id: uid(), name, area: areaSelect.value};
+      try{
+        await db.collection(COL.meta).doc('staff').update({list: firebase.firestore.FieldValue.arrayUnion(nuevaPersona)});
+      }catch(e){ showToast('No se pudo guardar. Revisa tu internet.'); return; }
       nameInput.value = '';
-      render();
       showToast(name+' agregado.');
     };
     addCard.appendChild(nameInput);
@@ -1677,10 +1740,10 @@
       const a = areaInput.value.trim();
       if(!a) return;
       if(state.areas.includes(a)){ showToast('Esa área ya existe.'); return; }
-      state.areas.push(a);
-      await saveAreas();
+      try{
+        await db.collection(COL.meta).doc('areas').update({list: firebase.firestore.FieldValue.arrayUnion(a)});
+      }catch(e){ showToast('No se pudo guardar. Revisa tu internet.'); return; }
       areaInput.value = '';
-      render();
     };
     areaCard.appendChild(areaInput);
     areaCard.appendChild(btnAddArea);
@@ -1707,9 +1770,10 @@
         del.className = 'del';
         del.textContent = 'Eliminar';
         del.onclick = async ()=>{
-          state.staff = state.staff.filter(x=>x.id!==p.id);
-          await saveStaff();
-          render();
+          if(!window.confirm('¿Eliminar a '+p.name+' de la lista de personal?')) return;
+          try{
+            await db.collection(COL.meta).doc('staff').update({list: firebase.firestore.FieldValue.arrayRemove(p)});
+          }catch(e){ showToast('No se pudo eliminar. Revisa tu internet.'); }
         };
         row.appendChild(del);
         h.appendChild(row);
@@ -1850,7 +1914,7 @@
     outer.id = 'lock-screen';
     const card = document.createElement('div');
     card.className = 'lock-card';
-    card.innerHTML = '<h1>Portería · Control de Acceso</h1><p>Ingresa el PIN para continuar</p>';
+    card.innerHTML = '<h1>Portería · Control de Acceso</h1><p>Ingresa el PIN para continuar</p><p style="font-size:10px;color:#999;margin-top:-12px;">'+APP_VERSION+'</p>';
     const input = document.createElement('input');
     input.type = 'password';
     input.inputMode = 'numeric';

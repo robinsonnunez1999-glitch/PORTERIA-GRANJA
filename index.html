@@ -124,7 +124,7 @@
 
 <script>
 (function(){
-  const APP_VERSION = 'v2026-09-10 23:35';
+  const APP_VERSION = 'v2026-09-14 20:15 CRITICO';
   // ⚠️ Pega aquí el firebaseConfig de tu proyecto (Firebase console → Configuración del proyecto → Tus apps)
   const firebaseConfig = {
     apiKey: "AIzaSyAzoh4UHDyXVt7lpK82NhSanBs6u89j2U8",
@@ -234,18 +234,36 @@
   const recordListeners = {};
   const visitorListeners = {};
 
+  async function safeBootstrapIfMissing(docName, buildDefault){
+    // Solo crea el documento si el SERVIDOR confirma que no existe (nunca por una
+    // lectura de caché local, que puede dar un falso "no existe" con mala señal).
+    try{
+      const snap = await db.collection(COL.meta).doc(docName).get({source:'server'});
+      if(!snap.exists){
+        await db.collection(COL.meta).doc(docName).set(await buildDefault());
+      }
+    }catch(e){ /* sin conexión al servidor: no arriesgar, no se crea nada */ }
+  }
+
   function bootstrapAndListen(){
+    safeBootstrapIfMissing('staff', async ()=> ({list: DEFAULT_STAFF}));
+    safeBootstrapIfMissing('areas', async ()=> ({list: DEFAULT_AREAS}));
+    safeBootstrapIfMissing('auth', async ()=>{
+      const [gh, ah] = await Promise.all([sha256Hex('1234'), sha256Hex('9090')]);
+      return {guardiaHash: gh, adminHash: ah};
+    });
+
     // Personal
     db.collection(COL.meta).doc('staff').onSnapshot(snap=>{
-      if(snap.exists && snap.data().list){ state.staff = snap.data().list; }
-      else { db.collection(COL.meta).doc('staff').set({list: DEFAULT_STAFF}); state.staff = DEFAULT_STAFF; }
+      if(snap.exists && Array.isArray(snap.data().list)){ state.staff = snap.data().list; }
+      else if(state.staff.length===0){ state.staff = DEFAULT_STAFF; } // solo de respaldo local, nunca se guarda en la nube
       render();
     }, ()=> showToast('No se pudo conectar con la nube. Revisa tu internet.'));
 
     // Áreas
     db.collection(COL.meta).doc('areas').onSnapshot(snap=>{
-      if(snap.exists && snap.data().list){ state.areas = snap.data().list; }
-      else { db.collection(COL.meta).doc('areas').set({list: DEFAULT_AREAS}); state.areas = DEFAULT_AREAS; }
+      if(snap.exists && Array.isArray(snap.data().list)){ state.areas = snap.data().list; }
+      else if(state.areas.length===0){ state.areas = DEFAULT_AREAS; } // solo de respaldo local, nunca se guarda en la nube
       render();
     });
 
@@ -253,10 +271,10 @@
     db.collection(COL.meta).doc('auth').onSnapshot(async snap=>{
       if(snap.exists && snap.data().guardiaHash && snap.data().adminHash){
         state.pins = {guardiaHash: snap.data().guardiaHash, adminHash: snap.data().adminHash};
-      } else {
-        const [gh, ah] = await Promise.all([sha256Hex('1234'), sha256Hex('9090')]);
-        await db.collection(COL.meta).doc('auth').set({guardiaHash: gh, adminHash: ah});
       }
+      // Si no existe, ya NO se crea uno nuevo automáticamente (eso borraba PINes reales
+      // cuando Firestore respondía con una lectura local vacía). Se crea solo una vez,
+      // de forma manual, la primera vez que el super usuario guarda PINes desde Configuración.
     });
 
     // Residentes con ingreso abierto (se arrastra entre días hasta que registren salida)
@@ -1541,6 +1559,69 @@
 
   function renderConfiguracion(){
     const wrap = document.createElement('div');
+
+    const backupCard = document.createElement('div');
+    backupCard.className = 'card';
+    backupCard.innerHTML = '<h2 class="section-title">Copia de seguridad</h2><p style="margin:0 0 10px;font-size:12.5px;color:var(--texto-suave);">Descarga un respaldo del personal, áreas, guardias, administrativos y autorizados. Guárdalo en tu celular o correo. Si algo se llega a borrar, lo restauras desde aquí en segundos (nunca elimina nada, solo agrega lo que falte).</p>';
+    const btnDescargarBackup = document.createElement('button');
+    btnDescargarBackup.className = 'action';
+    btnDescargarBackup.textContent = 'Descargar copia de seguridad';
+    btnDescargarBackup.onclick = ()=>{
+      const backup = {
+        fecha: new Date().toISOString(),
+        staff: state.staff,
+        areas: state.areas,
+        guardias: state.guardias,
+        administrativos: state.administrativos,
+        autorizadosTelefono: state.autorizadosTelefono
+      };
+      downloadFile('porteria_backup_'+todayStr()+'.json', JSON.stringify(backup, null, 2), 'application/json');
+      showToast('Copia de seguridad descargada.');
+    };
+    backupCard.appendChild(btnDescargarBackup);
+
+    const fileLabel = document.createElement('label');
+    fileLabel.className = 'action secundario';
+    fileLabel.style.cssText = 'display:inline-block;margin-top:10px;margin-left:10px;cursor:pointer;';
+    fileLabel.textContent = 'Restaurar desde una copia';
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'application/json';
+    fileInput.style.display = 'none';
+    fileInput.onchange = ()=>{
+      const file = fileInput.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = async (e)=>{
+        let data;
+        try{ data = JSON.parse(e.target.result); }
+        catch(err){ showToast('Ese archivo no es una copia de seguridad válida.'); return; }
+        if(!window.confirm('Esto va a agregar lo que falte de esta copia (del '+(data.fecha||'fecha desconocida')+') sin borrar nada de lo que ya está. ¿Continuar?')) return;
+        try{
+          if(Array.isArray(data.staff) && data.staff.length){
+            await db.collection(COL.meta).doc('staff').update({list: firebase.firestore.FieldValue.arrayUnion(...data.staff)});
+          }
+          if(Array.isArray(data.areas) && data.areas.length){
+            await db.collection(COL.meta).doc('areas').update({list: firebase.firestore.FieldValue.arrayUnion(...data.areas)});
+          }
+          if(Array.isArray(data.guardias) && data.guardias.length){
+            await db.collection(COL.meta).doc('guardias').update({list: firebase.firestore.FieldValue.arrayUnion(...data.guardias)});
+          }
+          if(Array.isArray(data.administrativos) && data.administrativos.length){
+            await db.collection(COL.meta).doc('administrativos').update({list: firebase.firestore.FieldValue.arrayUnion(...data.administrativos)});
+          }
+          if(Array.isArray(data.autorizadosTelefono) && data.autorizadosTelefono.length){
+            await db.collection(COL.meta).doc('telefono_autorizados').update({list: firebase.firestore.FieldValue.arrayUnion(...data.autorizadosTelefono)});
+          }
+          showToast('Copia restaurada correctamente.');
+        }catch(err){ showToast('No se pudo restaurar. Revisa tu internet.'); }
+      };
+      reader.readAsText(file);
+      fileInput.value = '';
+    };
+    fileLabel.appendChild(fileInput);
+    backupCard.appendChild(fileLabel);
+    wrap.appendChild(backupCard);
 
     const pinCard = document.createElement('div');
     pinCard.className = 'card';

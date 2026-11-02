@@ -261,7 +261,8 @@
   .nm-period .label button{border:none;background:var(--accent-soft);color:var(--accent-dark);font:800 11.5px var(--sans);padding:4px 11px;border-radius:999px;cursor:pointer;display:block;margin:6px auto 0;}
   .nm-filters{display:flex;gap:10px;align-items:center;}
   .nm-filters select{flex:1;}
-  .nm-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;}
+  .nm-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px;}
+  @media (min-width:640px){ .nm-stats{grid-template-columns:repeat(4,1fr);} }
   .nm-stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:13px 12px;box-shadow:var(--shadow-sm);min-width:0;}
   .nm-stat .num{font:800 24px var(--mono);letter-spacing:-.03em;line-height:1;}
   .nm-stat .num small{font-size:13px;font-weight:700;color:var(--muted);margin-left:3px;}
@@ -286,6 +287,9 @@
   .nm-grid .nm-tot{position:sticky;right:0;z-index:3;min-width:58px;font:800 14px var(--mono);background:var(--brand-soft);color:var(--brand-dark);
     box-shadow:-2px 0 0 var(--line-strong);}
   .nm-grid thead .nm-tot{background:var(--brand);color:#fff;z-index:5;font:800 11px var(--sans);}
+  .nm-grid .nm-ext{min-width:50px;font:800 13px var(--mono);background:var(--gold-soft);color:#7A5410;}
+  .nm-grid thead .nm-ext{background:#8A6516;color:#fff;font:800 10.5px var(--sans);white-space:normal;line-height:1.2;}
+  .nm-grid tfoot td.nm-ext{background:#8A6516;color:#fff;}
   .nm-grid .nm-noc{min-width:74px;font:700 12.5px var(--mono);color:var(--accent-dark);background:var(--accent-soft);}
   .nm-grid thead .nm-noc{background:var(--accent-dark);color:#fff;font:800 10.5px var(--sans);white-space:normal;line-height:1.2;}
   .nm-grid td.c{min-width:46px;font:700 13.5px var(--mono);}
@@ -308,12 +312,13 @@
   .nm-grid tr:last-child td{border-bottom:none;}
   @media (max-width:560px){
     .card.nm-card{margin-left:calc(-1 * var(--gutter));margin-right:calc(-1 * var(--gutter));border-radius:0;border-left:0;border-right:0;}
-    .nm-grid .nm-name{min-width:92px;max-width:104px;font-size:12.5px;padding:5px 7px;}
-    .nm-grid td.c,.nm-grid th.c{min-width:34px;padding:0 2px;}
+    .nm-grid .nm-name{min-width:84px;max-width:96px;font-size:12px;padding:5px 6px;}
+    .nm-grid td.c,.nm-grid th.c{min-width:31px;padding:0 1px;}
+    .nm-grid .nm-ext{min-width:42px;font-size:12px;padding:0 3px;}
     .nm-grid.sem td.c{font-size:13px;}
     .nm-grid thead th{font-size:10.5px;}
     .nm-grid thead th small{font-size:9px;}
-    .nm-grid .nm-tot{min-width:44px;font-size:13px;padding:0 4px;}
+    .nm-grid .nm-tot{min-width:40px;font-size:13px;padding:0 3px;}
     .nm-grid tfoot td.nm-name{font-size:10.5px;}
     .nm-grid tr.nm-area td.nm-name{font-size:11px;}
   }
@@ -343,6 +348,26 @@
     box-shadow:0 1px 0 rgba(255,255,255,.18) inset,0 5px 12px rgba(179,64,47,.25);}
   .al-note{font-size:11.5px;color:#8E4A3F;margin-top:10px;font-weight:600;line-height:1.4;}
   @media (max-width:420px){ .al-row{flex-wrap:wrap;} .al-row .action{width:100%;} }
+
+  /* ---------- Comparativa de horario ---------- */
+  .nm-grid td.k{padding:0;}
+  .nm-grid td.k svg{margin:0 auto;}
+  .nm-grid td.k-ok{background:var(--brand);color:#fff;}
+  .nm-grid td.k-falta{background:#C9503E;color:#fff;}
+  .nm-grid td.k-hoy{background:var(--gold-soft);color:#7A5410;font-weight:800;}
+  .nm-grid td.k-prog{background:#EAF3EC;color:#6C9A7E;font-size:20px;line-height:1;}
+  .nm-grid td.k-libre{background:#F0EEE6;color:#A3A99E;font:700 12px var(--mono);}
+  .nm-grid td.k-extra{background:#F2C66B;color:#5B3F08;}
+  .nm-grid td.k-sinh{background:#fff;color:var(--brand-2);}
+  .nm-grid td.k-otro{background:#EDEDED;color:#777;font:700 11px var(--mono);}
+  .nm-grid .nm-sum{min-width:40px;font:800 13.5px var(--mono);background:var(--brand-soft);color:var(--brand-dark);}
+  .nm-grid td.nm-sum.bad{color:var(--danger);}
+  .nm-grid thead .nm-sum{background:var(--brand);color:#fff;font:800 10.5px var(--sans);}
+  .nm-grid tfoot td.nm-sum{background:var(--brand);color:#fff;}
+  .nm-grid .nm-name small.cg{display:block;font:600 10.5px var(--sans);color:var(--muted);margin-top:1px;}
+
+  .nm-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--muted);font-weight:600;}
+  .nm-legend i{display:inline-block;width:11px;height:11px;border-radius:4px;vertical-align:-1px;margin-right:6px;}
 </style>
 </head>
 <body>
@@ -350,7 +375,7 @@
 
 <script>
 (function(){
-  const APP_VERSION = 'v2026-10-25 ALERTA';
+  const APP_VERSION = 'v2026-10-31 HORARIO';
   // ⚠️ Pega aquí el firebaseConfig de tu proyecto (Firebase console → Configuración del proyecto → Tus apps)
   const firebaseConfig = {
     apiKey: "AIzaSyAzoh4UHDyXVt7lpK82NhSanBs6u89j2U8",
@@ -443,7 +468,12 @@
     nominaFailed: {},
     nominaScroll: 0,
     nominaScrollKey: '',
-    alertaHora: '16:30'     // hora límite para avisar de salidas sin registrar
+    alertaHora: '16:30',    // hora límite para avisar de salidas sin registrar
+    nominaBase: {salidaNormal:'16:00', extraDesde:'17:00'},   // horario base de la nómina
+    nominaVista: 'horas',          // 'horas' | 'comparativa'
+    horarioCache: {}, horarioLoading: {}, horarioFailed: {},
+    horariosLista: null, horarioListaCargando: false,
+    horarioPrevia: null, horarioLeyendo: false, horarioGuardando: false
   };
   let ultimaFirmaAlerta = '';
 
@@ -487,6 +517,10 @@
     clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
     inbox:'<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
     alert:'<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    check:'<polyline points="20 6 9 17 4 12"/>',
+    x:'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+    plus:'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+    upload:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
     sun:'<circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.9" y1="4.9" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.1" y2="19.1"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/>'
   };
   function icon(name, size){
@@ -594,6 +628,14 @@
     db.collection(COL.meta).doc('alertas').onSnapshot(snap=>{
       const h = snap.exists && snap.data().horaSalida;
       state.alertaHora = (h && /^\d\d:\d\d$/.test(h)) ? h : '16:30';
+      render();
+    });
+
+    // Horario base de la nómina (salida normal y desde cuándo cuentan las horas extra)
+    db.collection(COL.meta).doc('nomina').onSnapshot(snap=>{
+      const d = snap.exists ? snap.data() : {};
+      const ok = (v)=> (v && /^\d\d:\d\d$/.test(v)) ? v : null;
+      state.nominaBase = {salidaNormal: ok(d.salidaNormal) || '16:00', extraDesde: ok(d.extraDesde) || '17:00'};
       render();
     });
 
@@ -1011,7 +1053,8 @@
       if(state.tab===key) b.className='active';
       b.onclick = ()=>{
         state.tab = key; state.search='';
-        if(key==='nomina'){ state.nominaCache = {}; state.nominaFailed = {}; } // datos frescos al entrar
+        if(key==='nomina'){ state.nominaCache = {}; state.nominaFailed = {}; state.horarioCache = {}; state.horarioFailed = {}; } // datos frescos al entrar
+        if(key==='configuracion'){ state.horariosLista = null; }
         render();
       };
       nav.appendChild(b);
@@ -1907,7 +1950,7 @@
 
     const fileLabel = document.createElement('label');
     fileLabel.className = 'action secundario';
-    fileLabel.style.cssText = 'display:inline-block;margin-top:10px;margin-left:10px;cursor:pointer;';
+    fileLabel.style.cssText = 'display:inline-flex;margin-top:10px;cursor:pointer;';
     fileLabel.textContent = 'Restaurar desde una copia';
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
@@ -1948,6 +1991,8 @@
     backupCard.appendChild(fileLabel);
     wrap.appendChild(backupCard);
 
+    wrap.appendChild(renderHorarioCard());
+
     const alertaCard = document.createElement('div');
     alertaCard.className = 'card';
     alertaCard.innerHTML = '<h2 class="section-title">Alerta de salidas sin registrar</h2><p style="margin:0 0 10px;font-size:12.5px;color:var(--texto-suave);">Pasada esta hora, la app muestra un aviso rojo con quienes siguen dentro (personal que no vive en la granja y visitantes), para que los guardias no olviden registrar su salida.</p>';
@@ -1967,6 +2012,26 @@
     alertaCard.appendChild(alertaInput);
     alertaCard.appendChild(btnAlerta);
     wrap.appendChild(alertaCard);
+
+    const baseCard = document.createElement('div');
+    baseCard.className = 'card';
+    baseCard.innerHTML = '<h2 class="section-title">Horario base de la nómina</h2><p style="margin:0 0 12px;font-size:12.5px;color:var(--texto-suave);line-height:1.5;">La jornada normal termina a la <b>salida normal</b>. Las horas extra solo cuentan si alguien sale a partir de la hora de <b>inicio de extras</b>; quien sale entre las dos horas (por ejemplo de 4:00 a 4:50 p. m.) no genera extras.</p>';
+    const lblSal = document.createElement('label'); lblSal.className = 'field-label'; lblSal.textContent = 'Salida normal';
+    const inSal = document.createElement('input'); inSal.type = 'time'; inSal.value = state.nominaBase.salidaNormal; inSal.style.marginBottom = '12px';
+    const lblExt = document.createElement('label'); lblExt.className = 'field-label'; lblExt.textContent = 'Las horas extra empiezan a las';
+    const inExt = document.createElement('input'); inExt.type = 'time'; inExt.value = state.nominaBase.extraDesde; inExt.style.marginBottom = '12px';
+    const btnBase = document.createElement('button');
+    btnBase.className = 'action secundario';
+    btnBase.textContent = 'Guardar horario base';
+    btnBase.onclick = async ()=>{
+      const a = inSal.value, b = inExt.value;
+      if(!/^\d\d:\d\d$/.test(a) || !/^\d\d:\d\d$/.test(b)){ showToast('Elige las dos horas.'); return; }
+      if(b < a){ showToast('Las extras no pueden empezar antes de la salida normal.'); return; }
+      try{ await db.collection(COL.meta).doc('nomina').set({salidaNormal: a, extraDesde: b}); showToast('Horario guardado: sale '+horaBonita(a)+', extras desde '+horaBonita(b)); }
+      catch(e){ showToast('No se pudo guardar. Revisa tu internet.'); }
+    };
+    baseCard.appendChild(lblSal); baseCard.appendChild(inSal); baseCard.appendChild(lblExt); baseCard.appendChild(inExt); baseCard.appendChild(btnBase);
+    wrap.appendChild(baseCard);
 
     const pinCard = document.createElement('div');
     pinCard.className = 'card';
@@ -2216,6 +2281,14 @@
   const DOW_LETTER_MON = ['L','M','M','J','V','S','D'];            // lunes primero
   const MIN_JORNADA_ALMUERZO = 300;   // el almuerzo (60 min) se descuenta si el primer turno dura 5 h o más
   const MIN_ALMUERZO = 60;
+  const JORNADA_MAX = 480;            // la jornada normal paga como máximo 8 h
+
+  function toMin(hhmm){ const p = String(hhmm || '0:0').split(':').map(Number); return (p[0] || 0)*60 + (p[1] || 0); }
+  // Horario base: a qué hora termina la jornada normal y desde cuándo cuentan las horas extra.
+  function nominaBase(){
+    const b = state.nominaBase || {};
+    return {normalEnd: toMin(b.salidaNormal || '16:00'), extraFrom: toMin(b.extraDesde || '17:00')};
+  }
 
   // Trae de una vez todos los días del rango (el ID del documento es la fecha).
   async function loadNominaRange(from, to){
@@ -2250,14 +2323,16 @@
   }
 
   // Horas por persona y por día dentro de [start,end].
-  // - Hora de entrada a hora de salida, menos 1 h de almuerzo (solo al primer turno del día, si dura 5 h o más).
-  // - Los reingresos del mismo día suman sus horas completas.
-  // - Cada casilla se redondea a la hora más cercana (como en la hoja oficial).
+  // - Jornada normal: de la entrada hasta la salida normal (16:00), menos 1 h de almuerzo (si dura 5 h o más), máximo 8 h,
+  //   redondeada a la hora más cercana.
+  // - Horas extra: solo si la salida es a partir de la hora de inicio de extras (17:00). Se cuenta 1 hora extra por cada hora
+  //   completa después de la salida normal; quien sale entre 16:00 y 16:59 no genera extras (los minutos sueltos no cuentan).
+  // - Los reingresos del mismo día (y los turnos que no son de día, como los de noche) cuentan por horas completas.
   // - Un turno sin salida (o que dura varios días) cuenta como asistencia, pero sus horas no se pueden calcular: se marca con •.
   function computeNomina(start, end, days){
     const roster = {};
     function nuevo(id, name, area, resident, former){
-      return {id:id, name:name, area:area, resident:!!resident, former:!!former, cells:{}, total:0, noc:0};
+      return {id:id, name:name, area:area, resident:!!resident, former:!!former, cells:{}, total:0, extra:0, noc:0};
     }
     state.staff.forEach(p=>{ roster[p.id] = nuevo(p.id, p.name, p.area, p.resident, false); });
 
@@ -2268,20 +2343,34 @@
       Object.keys(byPerson).forEach(id=>{
         const sessions = byPerson[id].slice().sort((a,b)=>(a.entrada||'').localeCompare(b.entrada||''));
         if(!roster[id]) roster[id] = nuevo(id, sessions[0].name, sessions[0].area, false, true);
-        let mins = 0, noc = 0, open = false;
+        const base = nominaBase();
+        let regularMins = 0, extraHours = 0, noc = 0, open = false;
         sessions.forEach((s, idx)=>{
           const variosDias = s.salida && s.salidaFecha && s.salidaFecha !== date;
           const m = calcMinutos(s.entrada, s.salida);
           if(!s.salida || variosDias || m == null){ open = true; return; }
-          let work = m;
-          if(idx === 0 && m >= MIN_JORNADA_ALMUERZO) work = m - MIN_ALMUERZO;
-          mins += work;
+          const e = toMin(s.entrada), xRaw = toMin(s.salida);
+          const cruzaMedianoche = (xRaw <= e);
+          const x = cruzaMedianoche ? xRaw + 1440 : xRaw;
           noc += minutosNocturnos(s.entrada, s.salida);
+          if(idx === 0 && e < base.normalEnd && !cruzaMedianoche){
+            // turno de día: jornada normal + horas extra completas
+            let reg = Math.min(x, base.normalEnd) - e;
+            if(reg >= MIN_JORNADA_ALMUERZO) reg -= MIN_ALMUERZO;
+            regularMins += Math.min(reg, JORNADA_MAX);
+            if(x >= base.extraFrom) extraHours += Math.floor((x - base.normalEnd) / 60);
+          } else if(idx === 0){
+            // primer turno que no es de día (por ejemplo de noche): horas completas del turno
+            regularMins += (m >= MIN_JORNADA_ALMUERZO) ? m - MIN_ALMUERZO : m;
+          } else {
+            // reingreso el mismo día: solo horas completas, como extra
+            extraHours += Math.floor(m / 60);
+          }
         });
-        const h = (mins > 0 || !open) ? Math.round(mins/60) : null;   // null = presente, horas pendientes
+        const h = (regularMins > 0 || extraHours > 0 || !open) ? Math.round(regularMins/60) + extraHours : null;   // null = presente, horas pendientes
         const row = roster[id];
-        row.cells[date] = {h:h, open:open, noc:noc};
-        if(h != null) row.total += h;
+        row.cells[date] = {h:h, extra:extraHours, open:open, noc:noc};
+        if(h != null){ row.total += h; row.extra += extraHours; }
         row.noc += noc;
       });
     });
@@ -2340,6 +2429,17 @@
     // ---- controles ----
     const ctrl = document.createElement('div');
     ctrl.className = 'card';
+
+    const vistaSeg = document.createElement('div');
+    vistaSeg.className = 'segmented';
+    [['horas','Horas','clock'],['comparativa','Comparativa','calendarCheck']].forEach(([k, l, ic])=>{
+      const b = document.createElement('button');
+      b.className = 'seg'+(state.nominaVista === k ? ' active' : '');
+      b.innerHTML = icon(ic,18)+l;
+      b.onclick = ()=>{ state.nominaVista = k; render(); };
+      vistaSeg.appendChild(b);
+    });
+    ctrl.appendChild(vistaSeg);
 
     const seg = document.createElement('div');
     seg.className = 'segmented';
@@ -2408,6 +2508,11 @@
       return wrap;
     }
 
+    if(state.nominaVista === 'comparativa'){
+      renderComparativa(wrap, {start:start, end:end, dates:dates, label:label, mode:mode, today:today, allRows:allRows});
+      return wrap;
+    }
+
     let rows = allRows;
     if(state.nominaArea !== 'todas') rows = rows.filter(r=>r.area === state.nominaArea);
     rows = rows.slice().sort((a,b)=> a.area.localeCompare(b.area,'es') || a.name.localeCompare(b.name,'es'));
@@ -2423,10 +2528,10 @@
     // ---- totales (Total1 = personas por día · Total2 = horas por día) ----
     const total1 = {}, total2 = {};
     dates.forEach(d=>{ total1[d] = 0; total2[d] = 0; });
-    let grandHours = 0, grandNoc = 0, withAtt = 0;
+    let grandHours = 0, grandNoc = 0, grandExtra = 0, withAtt = 0;
     rows.forEach(r=>{
       if(Object.keys(r.cells).length) withAtt++;
-      grandHours += r.total; grandNoc += r.noc;
+      grandHours += r.total; grandNoc += r.noc; grandExtra += r.extra;
       Object.keys(r.cells).forEach(d=>{
         if(total1[d] == null) return;
         total1[d] += 1;
@@ -2440,6 +2545,7 @@
     stats.innerHTML =
       '<div class="nm-stat hl"><div class="num">'+withAtt+'<small>/'+rows.length+'</small></div><div class="lbl">Personas que asistieron</div></div>'+
       '<div class="nm-stat"><div class="num">'+grandHours+'<small>h</small></div><div class="lbl">Horas trabajadas</div></div>'+
+      '<div class="nm-stat"><div class="num">'+grandExtra+'<small>h</small></div><div class="lbl">Horas extra</div></div>'+
       '<div class="nm-stat"><div class="num">'+(fmtNoc(grandNoc) || '0')+'<small>h</small></div><div class="lbl">Horas nocturnas 25%</div></div>';
     wrap.appendChild(stats);
 
@@ -2454,7 +2560,8 @@
         return '<td class="c x'+wk+'">x</td>';
       }
       if(c.h == null) return '<td class="c dot'+wk+'" title="Presente · sin salida registrada">•</td>';
-      return '<td class="c h'+(c.h > 8 ? ' over' : '')+(c.open ? ' open' : '')+wk+'">'+c.h+'</td>';
+      const tip = c.extra > 0 ? ' title="'+(c.h - c.extra)+' normales + '+c.extra+' extra"' : '';
+      return '<td class="c h'+(c.extra > 0 ? ' over' : '')+(c.open ? ' open' : '')+wk+'"'+tip+'>'+c.h+'</td>';
     }
 
     const headCols = dates.map(d=>{
@@ -2472,24 +2579,25 @@
     const areaOrder = Object.keys(byArea).sort((a,b)=>a.localeCompare(b,'es'));
     areaOrder.forEach(area=>{
       const list = byArea[area];
-      body += '<tr class="nm-area"><td class="nm-name">'+escapeHtml(area)+'</td><td colspan="'+(dates.length + 2)+'">'+list.filter(r=>Object.keys(r.cells).length).length+' de '+list.length+' asistieron</td></tr>';
+      body += '<tr class="nm-area"><td class="nm-name">'+escapeHtml(area)+'</td><td colspan="'+(dates.length + 3)+'">'+list.filter(r=>Object.keys(r.cells).length).length+' de '+list.length+' asistieron</td></tr>';
       list.forEach(r=>{
         body += '<tr><td class="nm-name">'+escapeHtml(r.name)+'</td>'+
           dates.map(d=>cellHtml(r,d)).join('')+
           '<td class="nm-tot">'+r.total+'</td>'+
+          '<td class="nm-ext">'+(r.extra || '')+'</td>'+
           '<td class="nm-noc">'+fmtNoc(r.noc)+'</td></tr>';
       });
     });
 
     const foot =
-      '<tr><td class="nm-name">Total 1 · Personas</td>'+dates.map(d=>'<td class="c">'+(d > today ? '' : total1[d])+'</td>').join('')+'<td class="nm-tot"></td><td class="nm-noc"></td></tr>'+
-      '<tr><td class="nm-name">Total 2 · Horas</td>'+dates.map(d=>'<td class="c">'+(d > today ? '' : total2[d])+'</td>').join('')+'<td class="nm-tot">'+grandHours+'</td><td class="nm-noc">'+(fmtNoc(grandNoc) || '0')+'</td></tr>';
+      '<tr><td class="nm-name">Total 1 · Personas</td>'+dates.map(d=>'<td class="c">'+(d > today ? '' : total1[d])+'</td>').join('')+'<td class="nm-tot"></td><td class="nm-ext"></td><td class="nm-noc"></td></tr>'+
+      '<tr><td class="nm-name">Total 2 · Horas</td>'+dates.map(d=>'<td class="c">'+(d > today ? '' : total2[d])+'</td>').join('')+'<td class="nm-tot">'+grandHours+'</td><td class="nm-ext">'+grandExtra+'</td><td class="nm-noc">'+(fmtNoc(grandNoc) || '0')+'</td></tr>';
 
     const tableCard = document.createElement('div');
     tableCard.className = 'card nm-card';
     tableCard.innerHTML =
       '<div class="nm-grid-wrap"><table class="nm-grid '+(mode === 'semana' ? 'sem' : 'mes')+'">'+
-      '<thead><tr><th class="nm-name">Nombres</th>'+headCols+'<th class="nm-tot">Total</th><th class="nm-noc">H. noct. 25%</th></tr></thead>'+
+      '<thead><tr><th class="nm-name">Nombres</th>'+headCols+'<th class="nm-tot">Total</th><th class="nm-ext">H. extra</th><th class="nm-noc">H. noct. 25%</th></tr></thead>'+
       '<tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div>';
     wrap.appendChild(tableCard);
 
@@ -2525,28 +2633,28 @@
     btnCsv.className = 'action';
     btnCsv.innerHTML = icon('download',18)+'Descargar CSV';
     btnCsv.onclick = ()=>{
-      const head = ['Nombre','Área'].concat(dates.map(d=> d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4))).concat(['Total horas','Horas nocturnas 25%']);
+      const head = ['Nombre','Área'].concat(dates.map(d=> d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4))).concat(['Total horas','Horas extra','Horas nocturnas 25%']);
       let csv = head.map(csvEscape).join(',')+'\n';
       rows.forEach(r=>{
-        csv += [r.name, r.area].concat(dates.map(d=>cellText(r,d))).concat([r.total, fmtNoc(r.noc)]).map(csvEscape).join(',')+'\n';
+        csv += [r.name, r.area].concat(dates.map(d=>cellText(r,d))).concat([r.total, r.extra || '', fmtNoc(r.noc)]).map(csvEscape).join(',')+'\n';
       });
-      csv += ['Total 1 (personas)',''].concat(dates.map(d=> d > today ? '' : total1[d])).concat(['','']).map(csvEscape).join(',')+'\n';
-      csv += ['Total 2 (horas)',''].concat(dates.map(d=> d > today ? '' : total2[d])).concat([grandHours, fmtNoc(grandNoc) || 0]).map(csvEscape).join(',')+'\n';
+      csv += ['Total 1 (personas)',''].concat(dates.map(d=> d > today ? '' : total1[d])).concat(['','','']).map(csvEscape).join(',')+'\n';
+      csv += ['Total 2 (horas)',''].concat(dates.map(d=> d > today ? '' : total2[d])).concat([grandHours, grandExtra, fmtNoc(grandNoc) || 0]).map(csvEscape).join(',')+'\n';
       downloadFile('nomina_'+(mode==='semana' ? 'semana_' : 'mes_')+start+'.csv', '\ufeff'+csv, 'text/csv;charset=utf-8');
     };
     const btnPdf = document.createElement('button');
     btnPdf.className = 'action secundario';
     btnPdf.innerHTML = icon('file',18)+'Generar PDF';
     btnPdf.onclick = ()=>{
-      const headers = ['Nombres'].concat(dates.map(dayLabel)).concat(['Total','H. noct.']);
+      const headers = ['Nombres'].concat(dates.map(dayLabel)).concat(['Total','H. extra','H. noct.']);
       const sections = areaOrder.map(area=>{
         const list = byArea[area];
-        const bodyRows = list.map(r=> [r.name].concat(dates.map(d=>cellText(r,d))).concat([String(r.total), fmtNoc(r.noc)]));
+        const bodyRows = list.map(r=> [r.name].concat(dates.map(d=>cellText(r,d))).concat([String(r.total), r.extra ? String(r.extra) : '', fmtNoc(r.noc)]));
         return {heading: area, headers: headers, rows: bodyRows};
       });
       sections.push({heading:'', headers: headers, rows: [
-        ['Total 1 · Personas'].concat(dates.map(d=> d > today ? '' : String(total1[d]))).concat(['','']),
-        ['Total 2 · Horas'].concat(dates.map(d=> d > today ? '' : String(total2[d]))).concat([String(grandHours), fmtNoc(grandNoc) || '0'])
+        ['Total 1 · Personas'].concat(dates.map(d=> d > today ? '' : String(total1[d]))).concat(['','','']),
+        ['Total 2 · Horas'].concat(dates.map(d=> d > today ? '' : String(total2[d]))).concat([String(grandHours), String(grandExtra), fmtNoc(grandNoc) || '0'])
       ]});
       const sub = label + (state.nominaArea !== 'todas' ? ' · '+state.nominaArea : '');
       const colStyles = {0:{cellWidth: mode === 'mes' ? 34 : 38, halign:'left'}};
@@ -2561,10 +2669,496 @@
 
     const note = document.createElement('div');
     note.className = 'card';
-    note.innerHTML = '<p class="nm-note"><b>Cómo se calcula:</b> cada casilla son las horas del día, de la hora de entrada a la de salida, menos <b>1 hora de almuerzo</b> (si el turno dura 5 h o más), redondeadas a la hora más cercana. Un reingreso el mismo día suma sus horas. <b>x</b> = no asistió. <b>•</b> = estuvo, pero no tiene salida registrada (o se quedó varios días), así que sus horas no se pueden calcular. <b>Total 1</b> = personas que asistieron ese día · <b>Total 2</b> = horas de ese día. Las horas nocturnas 25% son las trabajadas entre las 19:00 y las 06:00. Los datos de hoy se actualizan en vivo.</p>';
+    const bb = nominaBase();
+    const hh = (m)=> horaBonita(String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'));
+    note.innerHTML = '<p class="nm-note"><b>Cómo se calcula:</b> cada casilla son las horas del día. La jornada normal va de la entrada hasta las <b>'+hh(bb.normalEnd)+'</b>, menos 1 hora de almuerzo, con un máximo de 8 horas. Las <b>horas extra</b> solo cuentan si la salida es a partir de las <b>'+hh(bb.extraFrom)+'</b>, y se cuenta 1 hora por cada hora completa después de las '+hh(bb.normalEnd)+'; quien sale antes (por ejemplo a las 4:30 p. m.) no tiene extras, y los minutos sueltos no suman. Un reingreso el mismo día cuenta por horas completas. <b>x</b> = no asistió. <b>•</b> = estuvo, pero no tiene salida registrada (o se quedó varios días), así que sus horas no se pueden calcular. <b>Total 1</b> = personas que asistieron ese día · <b>Total 2</b> = horas de ese día. Las horas nocturnas 25% son las trabajadas entre las 19:00 y las 06:00. El super usuario puede cambiar las horas en Configuración.</p>';
     wrap.appendChild(note);
 
     return wrap;
+  }
+
+  // ---------- HORARIO DE TRABAJO (carga desde Excel) y COMPARATIVA con la asistencia ----------
+  // En el horario, una casilla con número es un día de trabajo y una "L" es un día libre.
+
+  function p2(n){ return String(n).padStart(2,'0'); }
+  function nombreMes(ym){
+    const a = ym.split('-').map(Number);
+    return cap(new Date(a[0], a[1]-1, 1).toLocaleDateString('es-EC',{month:'long', year:'numeric'}));
+  }
+  function normNombre(s){
+    return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+  }
+
+  // El lector de Excel (SheetJS) se descarga solo cuando se usa.
+  function loadXlsxLib(){
+    if(window.XLSX) return Promise.resolve();
+    return new Promise((resolve, reject)=>{
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = ()=> resolve();
+      s.onerror = ()=> reject(new Error('No se pudo cargar el lector de Excel. Revisa tu internet.'));
+      document.head.appendChild(s);
+    });
+  }
+
+  function fechaDeCelda(v){
+    if(v == null || v === '') return null;
+    if(v instanceof Date) return fmtDate(v);
+    if(typeof v === 'number'){
+      if(v > 30000 && v < 80000){
+        const d = new Date(Math.round((v - 25569) * 86400000));       // número de serie de Excel
+        return d.getUTCFullYear()+'-'+p2(d.getUTCMonth()+1)+'-'+p2(d.getUTCDate());
+      }
+      return null;
+    }
+    const s = String(v).trim();
+    let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);       // dd/mm/aaaa
+    if(m) return m[3]+'-'+p2(m[2])+'-'+p2(m[1]);
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(m) return m[1]+'-'+m[2]+'-'+m[3];
+    return null;
+  }
+
+  // Convierte la hoja (filas y columnas) en una lista de personas con su horario por fecha.
+  function parseHorarioFilas(aoa){
+    let hdr = -1, best = 0;
+    aoa.forEach((row, i)=>{
+      const n = (row || []).filter(c=> fechaDeCelda(c)).length;
+      if(n > best){ best = n; hdr = i; }
+    });
+    if(hdr < 0 || best < 5) throw new Error('No encontré la fila con las fechas (por ejemplo 01/11/2026). Revisa que el archivo sea el horario.');
+    const fechas = {}; let primera = Infinity;
+    (aoa[hdr] || []).forEach((c, j)=>{ const f = fechaDeCelda(c); if(f){ fechas[j] = f; primera = Math.min(primera, j); } });
+
+    const filas = [];
+    for(let i = hdr + 1; i < aoa.length; i++){
+      const row = aoa[i] || [];
+      const textos = [];
+      for(let j = 0; j < primera; j++){ const v = row[j]; if(typeof v === 'string' && v.trim()) textos.push(v.trim()); }
+      if(!textos.length) continue;
+      const nombre = textos[0], cargo = textos[1] || '';
+      if(/operadores|operaci[oó]n|total|nombre/i.test(nombre) || /operadores|operaci[oó]n|total/i.test(cargo)) continue;   // filas de resumen
+      const dias = {}; let validos = 0;
+      Object.keys(fechas).forEach(j=>{
+        const v = row[j];
+        if(v == null || v === '') return;
+        let val = null;
+        if(typeof v === 'number') val = v;
+        else {
+          const t = String(v).trim().toUpperCase();
+          if(t === 'L') val = 'L';
+          else if(/^\d+$/.test(t)) val = Number(t);
+          else if(t) val = t;
+        }
+        if(val != null){ dias[fechas[j]] = val; validos++; }
+      });
+      if(validos >= 3) filas.push({name:nombre, cargo:cargo, days:dias});
+    }
+    if(!filas.length) throw new Error('No encontré personas con su horario en el archivo.');
+    return filas;
+  }
+
+  async function leerHorarioArchivo(file){
+    await loadXlsxLib();
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:'array'});
+    let ultimo = null;
+    for(let k = 0; k < wb.SheetNames.length; k++){
+      const nombre = wb.SheetNames[k];
+      const aoa = XLSX.utils.sheet_to_json(wb.Sheets[nombre], {header:1, raw:true, defval:null});
+      try{ return {hoja: nombre, filas: parseHorarioFilas(aoa)}; }catch(e){ ultimo = e; }
+    }
+    throw ultimo || new Error('El archivo está vacío.');
+  }
+
+  // Sugiere a qué persona de la lista corresponde cada nombre del horario.
+  function sugerirStaff(nombre){
+    const n = normNombre(nombre), toks = n.split(' ');
+    const exactos = state.staff.filter(p=> normNombre(p.name) === n);
+    if(exactos.length === 1) return {id: exactos[0].id, posibles: []};
+    const cand = state.staff.filter(p=>{
+      const pt = normNombre(p.name).split(' ');
+      return toks.every(t=> pt.includes(t)) || pt.every(t=> toks.includes(t));
+    });
+    if(cand.length === 1) return {id: cand[0].id, posibles: []};
+    const posibles = state.staff.filter(p=> normNombre(p.name).split(' ').some(t=> t.length > 2 && toks.includes(t))).map(p=>p.id);
+    return {id: '', posibles: posibles};
+  }
+
+  function armarPrevia(archivo, res){
+    const fechas = [];
+    res.filas.forEach(f=> Object.keys(f.days).forEach(d=> fechas.push(d)));
+    fechas.sort();
+    return {
+      archivo: archivo, hoja: res.hoja, desde: fechas[0], hasta: fechas[fechas.length - 1],
+      filas: res.filas.map(f=>{ const s = sugerirStaff(f.name); return {name:f.name, cargo:f.cargo, days:f.days, staffId:s.id, posibles:s.posibles}; })
+    };
+  }
+
+  async function guardarHorario(prev){
+    const porMes = {};
+    prev.filas.forEach(f=>{
+      if(!f.staffId) return;
+      Object.keys(f.days).forEach(d=>{
+        const ym = d.slice(0,7);
+        porMes[ym] = porMes[ym] || {};
+        const o = porMes[ym][f.staffId] = porMes[ym][f.staffId] || {staffId:f.staffId, name:f.name, cargo:f.cargo, days:{}};
+        o.days[d] = f.days[d];
+      });
+    });
+    const meses = Object.keys(porMes).sort();
+    if(!meses.length){ showToast('Asigna al menos una persona antes de guardar.'); return; }
+    state.horarioGuardando = true; render();
+    try{
+      for(let i = 0; i < meses.length; i++){
+        const ym = meses[i];
+        await db.collection(COL.meta).doc('horario_'+ym).set({
+          rows: Object.keys(porMes[ym]).map(k=> porMes[ym][k]),
+          subido: new Date().toISOString(),
+          por: (state.session && state.session.nombre) || ''
+        });
+      }
+      showToast('Horario guardado: '+meses.map(nombreMes).join(', '));
+      state.horarioPrevia = null; state.horarioCache = {}; state.horarioFailed = {}; state.horariosLista = null;
+    }catch(e){
+      showToast('No se pudo guardar el horario. Revisa tu internet.');
+    }
+    state.horarioGuardando = false; render();
+  }
+
+  async function loadHorariosLista(){
+    if(state.horariosLista !== null || state.horarioListaCargando) return;
+    state.horarioListaCargando = true;
+    try{
+      const FP = firebase.firestore.FieldPath.documentId();
+      const snap = await db.collection(COL.meta).where(FP,'>=','horario_').where(FP,'<=','horario_\uf8ff').get();
+      state.horariosLista = snap.docs.map(d=>({ym: d.id.replace('horario_',''), n: ((d.data() && d.data().rows) || []).length})).sort((a,b)=> a.ym.localeCompare(b.ym));
+    }catch(e){ state.horariosLista = []; }
+    state.horarioListaCargando = false;
+    render();
+  }
+
+  async function loadHorarioMes(ym){
+    if(state.horarioCache[ym] !== undefined || state.horarioLoading[ym]) return;
+    state.horarioLoading[ym] = true;
+    try{
+      const snap = await db.collection(COL.meta).doc('horario_'+ym).get();
+      state.horarioCache[ym] = snap.exists ? snap.data() : null;
+      delete state.horarioFailed[ym];
+    }catch(e){
+      state.horarioFailed[ym] = true;
+      showToast('No se pudo cargar el horario. Revisa tu internet.');
+    }
+    delete state.horarioLoading[ym];
+    render();
+  }
+
+  // ---- Tarjeta de Configuración: cargar y ver horarios ----
+  function renderHorarioCard(){
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<h2 class="section-title">Horario de trabajo</h2>'+
+      '<p style="margin:0 0 12px;font-size:12.5px;color:var(--texto-suave);line-height:1.5;">Carga el horario del mes (archivo Excel) para comparar los días que le tocaba trabajar a cada persona con los que realmente asistió. Las casillas con número son días de trabajo y las <b>L</b> son días libres. En la pestaña Nómina, la opción <b>Comparativa</b> muestra el resultado.</p>';
+
+    // horarios ya guardados
+    if(state.horariosLista === null) setTimeout(loadHorariosLista, 0);
+    if(state.horariosLista && state.horariosLista.length){
+      const lista = document.createElement('div');
+      lista.style.marginBottom = '12px';
+      state.horariosLista.forEach(h=>{
+        const row = document.createElement('div');
+        row.className = 'staff-row';
+        row.innerHTML = '<div><div style="font-weight:800;">'+escapeHtml(nombreMes(h.ym))+'</div><div class="meta">'+h.n+' personas</div></div>';
+        const del = document.createElement('button');
+        del.className = 'del'; del.textContent = 'Eliminar';
+        del.onclick = async ()=>{
+          if(!window.confirm('¿Eliminar el horario de '+nombreMes(h.ym)+'?')) return;
+          try{ await db.collection(COL.meta).doc('horario_'+h.ym).delete(); showToast('Horario eliminado.'); }
+          catch(e){ showToast('No se pudo eliminar. Revisa tu internet.'); }
+          state.horariosLista = null; state.horarioCache = {}; render();
+        };
+        row.appendChild(del);
+        lista.appendChild(row);
+      });
+      card.appendChild(lista);
+    } else if(state.horariosLista){
+      const vacio = document.createElement('p');
+      vacio.style.cssText = 'margin:0 0 12px;font-size:13px;color:var(--texto-suave);font-weight:600;';
+      vacio.textContent = 'Todavía no hay ningún horario cargado.';
+      card.appendChild(vacio);
+    }
+
+    // botón para elegir el archivo
+    const lbl = document.createElement('label');
+    lbl.className = 'action';
+    lbl.style.cursor = 'pointer';
+    lbl.innerHTML = icon('upload',18)+(state.horarioLeyendo ? 'Leyendo el archivo…' : 'Cargar horario (Excel)');
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.xlsx,.xls,.csv'; inp.style.display = 'none';
+    inp.onchange = ()=>{
+      const f = inp.files && inp.files[0];
+      if(!f) return;
+      state.horarioLeyendo = true; render();
+      leerHorarioArchivo(f).then(res=>{
+        state.horarioPrevia = armarPrevia(f.name, res);
+      }).catch(err=>{
+        showToast(err && err.message ? err.message : 'No se pudo leer el archivo.');
+      }).then(()=>{ state.horarioLeyendo = false; render(); });
+    };
+    lbl.appendChild(inp);
+    card.appendChild(lbl);
+
+    // vista previa para asignar nombres
+    const prev = state.horarioPrevia;
+    if(prev){
+      const box = document.createElement('div');
+      box.style.cssText = 'margin-top:16px;border-top:1px solid var(--linea);padding-top:14px;';
+      const sinAsignar = prev.filas.filter(f=> !f.staffId).length;
+      box.innerHTML = '<div style="font-weight:800;margin-bottom:4px;">Revisa a quién corresponde cada nombre</div>'+
+        '<div style="font-size:12.5px;color:var(--texto-suave);font-weight:600;margin-bottom:10px;line-height:1.5;">'+
+          escapeHtml(prev.archivo)+' · del '+escapeHtml(parseDate(prev.desde).toLocaleDateString('es-EC',{day:'numeric',month:'short',year:'numeric'}))+' al '+escapeHtml(parseDate(prev.hasta).toLocaleDateString('es-EC',{day:'numeric',month:'short',year:'numeric'}))+' · '+prev.filas.length+' personas'+
+          (sinAsignar ? '<br><span style="color:var(--barro-osc);">'+sinAsignar+' sin asignar: no se compararán hasta que las asignes.</span>' : '')+
+        '</div>';
+      prev.filas.forEach((f, idx)=>{
+        const row = document.createElement('div');
+        row.className = 'staff-row';
+        row.style.alignItems = 'flex-start';
+        row.style.flexDirection = 'column';
+        row.style.gap = '6px';
+        const trab = Object.keys(f.days).filter(d=> typeof f.days[d] === 'number').length;
+        const lib = Object.keys(f.days).filter(d=> f.days[d] === 'L').length;
+        row.innerHTML = '<div><div style="font-weight:800;">'+escapeHtml(f.name)+'</div><div class="meta">'+escapeHtml(f.cargo || '')+(f.cargo ? ' · ' : '')+trab+' días de trabajo · '+lib+' libres</div></div>';
+        const sel = document.createElement('select');
+        sel.style.minHeight = '44px'; sel.style.fontSize = '14px';
+        const o0 = document.createElement('option'); o0.value = ''; o0.textContent = '— Elegir persona —'; sel.appendChild(o0);
+        const orden = state.staff.slice().sort((a,b)=>{
+          const pa = f.posibles.includes(a.id) ? 0 : 1, pb = f.posibles.includes(b.id) ? 0 : 1;
+          return pa - pb || a.name.localeCompare(b.name,'es');
+        });
+        orden.forEach(p=>{
+          const o = document.createElement('option'); o.value = p.id;
+          o.textContent = (f.posibles.includes(p.id) && !f.staffId ? '★ ' : '')+p.name+' · '+p.area;
+          sel.appendChild(o);
+        });
+        sel.value = f.staffId || '';
+        sel.onchange = ()=>{ f.staffId = sel.value; render(); };
+        row.appendChild(sel);
+        box.appendChild(row);
+      });
+      const acc = document.createElement('div');
+      acc.className = 'row wrap';
+      acc.style.marginTop = '14px';
+      const bg = document.createElement('button');
+      bg.className = 'action';
+      bg.disabled = !!state.horarioGuardando;
+      bg.textContent = state.horarioGuardando ? 'Guardando…' : 'Guardar horario';
+      bg.onclick = ()=> guardarHorario(prev);
+      const bc = document.createElement('button');
+      bc.className = 'action secundario';
+      bc.textContent = 'Cancelar';
+      bc.onclick = ()=>{ state.horarioPrevia = null; render(); };
+      acc.appendChild(bg); acc.appendChild(bc);
+      box.appendChild(acc);
+      card.appendChild(box);
+    }
+    return card;
+  }
+
+  // ---- Pestaña Nómina → Comparativa: días programados contra días asistidos ----
+  function renderComparativa(wrap, c){
+    const start = c.start, end = c.end, dates = c.dates, today = c.today, mode = c.mode;
+    const meses = Array.from(new Set([start.slice(0,7), end.slice(0,7)]));
+    let fallo = false, cargando = false;
+    meses.forEach(ym=>{
+      if(state.horarioCache[ym] !== undefined) return;
+      if(state.horarioFailed[ym]) fallo = true;
+      else { cargando = true; setTimeout(()=> loadHorarioMes(ym), 0); }
+    });
+    if(fallo || cargando){
+      const st = document.createElement('div');
+      st.className = 'card empty';
+      if(fallo){
+        st.innerHTML = '<div class="ic-big">'+icon('refresh',24)+'</div>No se pudo cargar el horario.';
+        const retry = document.createElement('button');
+        retry.className = 'action secundario'; retry.style.marginTop = '14px'; retry.textContent = 'Reintentar';
+        retry.onclick = ()=>{ state.horarioFailed = {}; render(); };
+        st.appendChild(retry);
+      } else st.innerHTML = '<div class="spinner"></div>Cargando el horario…';
+      wrap.appendChild(st);
+      return;
+    }
+
+    const porStaff = {}; let orden = 0;
+    meses.forEach(ym=>{
+      const h = state.horarioCache[ym];
+      if(!h || !h.rows) return;
+      h.rows.forEach(r=>{
+        let o = porStaff[r.staffId];
+        if(!o) o = porStaff[r.staffId] = {staffId:r.staffId, name:r.name, cargo:r.cargo || '', days:{}, orden:orden++};
+        Object.assign(o.days, r.days);
+      });
+    });
+    let filas = Object.keys(porStaff).map(k=> porStaff[k]);
+    if(!filas.length){
+      const e = document.createElement('div');
+      e.className = 'card empty';
+      e.innerHTML = '<div class="ic-big">'+icon('calendar',24)+'</div>Todavía no hay un horario cargado para este periodo.'+
+        (state.session.role === 'admin' ? '<br><span style="font-size:12.5px;">Cárgalo en Configuración → Horario de trabajo.</span>' : '');
+      wrap.appendChild(e);
+      return;
+    }
+
+    const asist = {};
+    c.allRows.forEach(r=>{ asist[r.id] = r.cells; });
+    filas.forEach(f=>{
+      const p = state.staff.find(x=> x.id === f.staffId);
+      f.nombre = p ? p.name : f.name;
+      f.area = p ? p.area : 'Sin área';
+      f.est = {}; f.hubo = {};
+      f.ok = 0; f.falt = 0; f.extra = 0;
+      dates.forEach(d=>{
+        const v = f.days[d];
+        const prog = (typeof v === 'number') ? 'T' : (v === 'L' ? 'L' : (v ? 'O' : ''));
+        const hubo = !!(asist[f.staffId] && asist[f.staffId][d]);
+        let e;
+        if(prog === 'T') e = hubo ? 'ok' : (d < today ? 'falta' : (d === today ? 'hoy' : 'prog'));
+        else if(hubo) e = (prog === '') ? 'sinh' : 'extra';
+        else e = (prog === 'L') ? 'libre' : (prog === 'O' ? 'otro' : 'nada');
+        f.est[d] = e; f.hubo[d] = hubo;
+        if(e === 'ok') f.ok++;
+        if(e === 'falta') f.falt++;
+        if(e === 'extra') f.extra++;
+      });
+    });
+    if(state.nominaArea !== 'todas') filas = filas.filter(f=> f.area === state.nominaArea);
+    filas.sort((a,b)=> a.area.localeCompare(b.area,'es') || a.orden - b.orden);
+
+    if(!filas.length){
+      const e = document.createElement('div');
+      e.className = 'card empty';
+      e.innerHTML = '<div class="ic-big">'+icon('inbox',24)+'</div>No hay personas con horario en esta área.';
+      wrap.appendChild(e);
+      return;
+    }
+
+    const tOk = filas.reduce((s,f)=> s + f.ok, 0), tFalt = filas.reduce((s,f)=> s + f.falt, 0), tExtra = filas.reduce((s,f)=> s + f.extra, 0);
+    const cumpl = (tOk + tFalt) ? Math.round(tOk * 100 / (tOk + tFalt)) : null;
+
+    const stats = document.createElement('div');
+    stats.className = 'nm-stats';
+    stats.innerHTML =
+      '<div class="nm-stat hl"><div class="num">'+(cumpl == null ? '–' : cumpl+'<small>%</small>')+'</div><div class="lbl">Cumplimiento del horario</div></div>'+
+      '<div class="nm-stat"><div class="num" style="color:'+(tFalt ? 'var(--danger)' : 'inherit')+'">'+tFalt+'</div><div class="lbl">Faltas (les tocaba y no vinieron)</div></div>'+
+      '<div class="nm-stat"><div class="num">'+tOk+'</div><div class="lbl">Días cumplidos</div></div>'+
+      '<div class="nm-stat"><div class="num">'+tExtra+'</div><div class="lbl">Trabajó en día libre</div></div>';
+    wrap.appendChild(stats);
+
+    const legend = document.createElement('div');
+    legend.className = 'nm-legend';
+    legend.style.margin = '0 2px 12px';
+    legend.innerHTML =
+      '<span><i style="background:var(--brand)"></i>Asistió</span>'+
+      '<span><i style="background:#C9503E"></i>Falta</span>'+
+      '<span><i style="background:#F2C66B"></i>Trabajó en libre</span>'+
+      '<span><i style="background:#EAF3EC;border:1px solid #BFD8C8"></i>Le toca</span>'+
+      '<span><i style="background:#F0EEE6;border:1px solid var(--line)"></i>Libre</span>';
+    wrap.appendChild(legend);
+
+    const nomEst = {ok:'Asistió', falta:'Falta', hoy:'Hoy: aún no registra entrada', prog:'Le toca trabajar', libre:'Día libre', extra:'Trabajó en su día libre', sinh:'Asistió (sin horario cargado ese día)', otro:'Otro', nada:'Sin horario'};
+    function celda(f, d){
+      const e = f.est[d];
+      const tip = ' title="'+escapeHtml(formatDateEs(d)+': '+nomEst[e])+'"';
+      if(e === 'ok') return '<td class="c k k-ok"'+tip+'>'+icon('check',16)+'</td>';
+      if(e === 'falta') return '<td class="c k k-falta"'+tip+'>'+icon('x',16)+'</td>';
+      if(e === 'extra') return '<td class="c k k-extra"'+tip+'>'+icon('plus',16)+'</td>';
+      if(e === 'sinh') return '<td class="c k k-sinh"'+tip+'>'+icon('check',16)+'</td>';
+      if(e === 'hoy') return '<td class="c k k-hoy"'+tip+'>…</td>';
+      if(e === 'prog') return '<td class="c k k-prog"'+tip+'>•</td>';
+      if(e === 'libre') return '<td class="c k k-libre"'+tip+'>L</td>';
+      if(e === 'otro') return '<td class="c k k-otro"'+tip+'>'+escapeHtml(String(f.days[d]))+'</td>';
+      return '<td class="c k"></td>';
+    }
+    const headCols = dates.map(d=>{
+      const dt = parseDate(d), i = (dt.getDay() + 6) % 7, wk = (i >= 5) ? ' wk' : '';
+      return mode === 'semana'
+        ? '<th class="c'+wk+'">'+DOW_PDF[i]+'<small>'+d.slice(8)+'/'+d.slice(5,7)+'</small></th>'
+        : '<th class="c'+wk+'">'+DOW_LETTER_MON[i]+'<small>'+Number(d.slice(8))+'</small></th>';
+    }).join('');
+
+    const byArea = {};
+    filas.forEach(f=>{ (byArea[f.area] = byArea[f.area] || []).push(f); });
+    const areaOrder = Object.keys(byArea).sort((a,b)=> a.localeCompare(b,'es'));
+    let body = '';
+    areaOrder.forEach(area=>{
+      body += '<tr class="nm-area"><td class="nm-name">'+escapeHtml(area)+'</td><td colspan="'+(dates.length + 2)+'">'+byArea[area].filter(f=>f.falt).length+' con faltas</td></tr>';
+      byArea[area].forEach(f=>{
+        body += '<tr><td class="nm-name">'+escapeHtml(f.nombre)+(f.cargo ? '<small class="cg">'+escapeHtml(f.cargo)+'</small>' : '')+'</td>'+
+          dates.map(d=> celda(f, d)).join('')+
+          '<td class="nm-sum">'+f.ok+'</td><td class="nm-sum'+(f.falt ? ' bad' : '')+'">'+f.falt+'</td></tr>';
+      });
+    });
+    const progDia = {}, asisDia = {};
+    dates.forEach(d=>{
+      progDia[d] = filas.filter(f=> typeof f.days[d] === 'number').length;
+      asisDia[d] = filas.filter(f=> f.hubo[d]).length;
+    });
+    const foot =
+      '<tr><td class="nm-name">Programados</td>'+dates.map(d=>'<td class="c">'+progDia[d]+'</td>').join('')+'<td class="nm-sum"></td><td class="nm-sum"></td></tr>'+
+      '<tr><td class="nm-name">Asistieron</td>'+dates.map(d=>'<td class="c">'+(d > today ? '' : asisDia[d])+'</td>').join('')+'<td class="nm-sum">'+tOk+'</td><td class="nm-sum">'+tFalt+'</td></tr>';
+
+    const tableCard = document.createElement('div');
+    tableCard.className = 'card nm-card';
+    tableCard.innerHTML =
+      '<div class="nm-grid-wrap"><table class="nm-grid '+(mode === 'semana' ? 'sem' : 'mes')+'">'+
+      '<thead><tr><th class="nm-name">Nombres</th>'+headCols+'<th class="nm-sum">Asist.</th><th class="nm-sum">Faltas</th></tr></thead>'+
+      '<tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div>';
+    wrap.appendChild(tableCard);
+
+    // ---- exportar ----
+    const txt = {ok:'Asistió', falta:'Falta', hoy:'Pendiente hoy', prog:'Le toca', libre:'Libre', extra:'Trabajó en libre', sinh:'Asistió', otro:'Otro', nada:''};
+    const letra = {ok:'A', falta:'F', hoy:'…', prog:'·', libre:'L', extra:'+', sinh:'A', otro:'?', nada:''};
+    const actions = document.createElement('div');
+    actions.className = 'card row wrap';
+    const btnCsv = document.createElement('button');
+    btnCsv.className = 'action';
+    btnCsv.innerHTML = icon('download',18)+'Descargar CSV';
+    btnCsv.onclick = ()=>{
+      const head = ['Nombre','Cargo','Área'].concat(dates.map(d=> d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4))).concat(['Asistió','Faltas','Trabajó en libre','Cumplimiento %']);
+      let csv = head.map(csvEscape).join(',')+'\n';
+      filas.forEach(f=>{
+        const cu = (f.ok + f.falt) ? Math.round(f.ok * 100 / (f.ok + f.falt)) : '';
+        csv += [f.nombre, f.cargo, f.area].concat(dates.map(d=> txt[f.est[d]])).concat([f.ok, f.falt, f.extra, cu]).map(csvEscape).join(',')+'\n';
+      });
+      downloadFile('comparativa_horario_'+(mode==='semana' ? 'semana_' : 'mes_')+start+'.csv', '\ufeff'+csv, 'text/csv;charset=utf-8');
+    };
+    const btnPdf = document.createElement('button');
+    btnPdf.className = 'action secundario';
+    btnPdf.innerHTML = icon('file',18)+'Generar PDF';
+    btnPdf.onclick = ()=>{
+      const dl = (d)=>{ const i = (parseDate(d).getDay() + 6) % 7; return mode === 'semana' ? DOW_PDF[i]+' '+d.slice(8)+'/'+d.slice(5,7) : String(Number(d.slice(8))); };
+      const headers = ['Nombres'].concat(dates.map(dl)).concat(['Asist.','Faltas']);
+      const sections = areaOrder.map(area=>({
+        heading: area, headers: headers,
+        rows: byArea[area].map(f=> [f.nombre].concat(dates.map(d=> letra[f.est[d]])).concat([String(f.ok), String(f.falt)]))
+      }));
+      sections.push({heading:'', headers: headers, rows: [
+        ['Programados'].concat(dates.map(d=> String(progDia[d]))).concat(['','']),
+        ['Asistieron'].concat(dates.map(d=> d > today ? '' : String(asisDia[d]))).concat([String(tOk), String(tFalt)])
+      ]});
+      const sub = c.label + (state.nominaArea !== 'todas' ? ' · '+state.nominaArea : '')+'  —  A = asistió · F = falta · L = libre · + = trabajó en libre · · = le toca';
+      const colStyles = {0:{cellWidth: mode === 'mes' ? 34 : 38, halign:'left'}};
+      for(let i = 1; i < headers.length; i++) colStyles[i] = {halign:'center'};
+      generarPdf('comparativa_horario_'+(mode==='semana' ? 'semana_' : 'mes_')+start+'.pdf', 'Comparativa · Horario y asistencia', sub, sections,
+        mode === 'mes' ? {orientation:'landscape', fontSize:6.5, cellPadding:1.4, columnStyles:colStyles}
+                       : {fontSize:8.5, cellPadding:2.2, columnStyles:colStyles});
+    };
+    actions.appendChild(btnCsv); actions.appendChild(btnPdf);
+    wrap.appendChild(actions);
+
+    const note = document.createElement('div');
+    note.className = 'card';
+    note.innerHTML = '<p class="nm-note"><b>Cómo se compara:</b> un día cuenta como <b>asistió</b> si el guardia registró la entrada de esa persona ese día. Si le tocaba trabajar y no hay registro, es una <b>falta</b> (los días de hoy y los que vienen no cuentan hasta que pasen). Si no le tocaba (día libre) y vino, aparece como <b>trabajó en libre</b>. El cumplimiento es días cumplidos ÷ (cumplidos + faltas). Se va actualizando solo a medida que se registran las entradas.</p>';
+    wrap.appendChild(note);
   }
 
   // ---------- ALERTA: salidas sin registrar ----------

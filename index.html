@@ -359,6 +359,8 @@
   .nm-grid td.k-libre{background:#F0EEE6;color:#A3A99E;font:700 12px var(--mono);}
   .nm-grid td.k-extra{background:#F2C66B;color:#5B3F08;}
   .nm-grid td.k-sinh{background:#fff;color:var(--brand-2);}
+  .nm-grid td.k-vac{background:#DD7E6B;color:#fff;font:800 12px var(--mono);}
+  .nm-grid td.k-perm{background:#3F6FA0;color:#fff;font:800 12px var(--mono);}
   .nm-grid td.k-otro{background:#EDEDED;color:#777;font:700 11px var(--mono);}
   .nm-grid .nm-sum{min-width:40px;font:800 13.5px var(--mono);background:var(--brand-soft);color:var(--brand-dark);}
   .nm-grid td.nm-sum.bad{color:var(--danger);}
@@ -375,7 +377,7 @@
 
 <script>
 (function(){
-  const APP_VERSION = 'v2026-10-31 HORARIO';
+  const APP_VERSION = 'v2026-11-07 CRONOGRAMA';
   // ⚠️ Pega aquí el firebaseConfig de tu proyecto (Firebase console → Configuración del proyecto → Tus apps)
   const firebaseConfig = {
     apiKey: "AIzaSyAzoh4UHDyXVt7lpK82NhSanBs6u89j2U8",
@@ -2015,7 +2017,7 @@
 
     const baseCard = document.createElement('div');
     baseCard.className = 'card';
-    baseCard.innerHTML = '<h2 class="section-title">Horario base de la nómina</h2><p style="margin:0 0 12px;font-size:12.5px;color:var(--texto-suave);line-height:1.5;">La jornada normal termina a la <b>salida normal</b>. Las horas extra solo cuentan si alguien sale a partir de la hora de <b>inicio de extras</b>; quien sale entre las dos horas (por ejemplo de 4:00 a 4:50 p. m.) no genera extras.</p>';
+    baseCard.innerHTML = '<h2 class="section-title">Horario base de la nómina</h2><p style="margin:0 0 12px;font-size:12.5px;color:var(--texto-suave);line-height:1.5;">La jornada normal termina a la <b>salida normal</b>. Las horas extra solo cuentan si alguien sale a partir de la hora de <b>inicio de extras</b>; quien sale entre las dos horas (por ejemplo de 4:00 a 4:50 p. m.) no genera extras. Desde la hora de inicio de extras se cuenta todo el tiempo después de la salida normal, en minutos reales (salir a las 5:30 p. m. = 1 h 30 min).</p>';
     const lblSal = document.createElement('label'); lblSal.className = 'field-label'; lblSal.textContent = 'Salida normal';
     const inSal = document.createElement('input'); inSal.type = 'time'; inSal.value = state.nominaBase.salidaNormal; inSal.style.marginBottom = '12px';
     const lblExt = document.createElement('label'); lblExt.className = 'field-label'; lblExt.textContent = 'Las horas extra empiezan a las';
@@ -2325,14 +2327,15 @@
   // Horas por persona y por día dentro de [start,end].
   // - Jornada normal: de la entrada hasta la salida normal (16:00), menos 1 h de almuerzo (si dura 5 h o más), máximo 8 h,
   //   redondeada a la hora más cercana.
-  // - Horas extra: solo si la salida es a partir de la hora de inicio de extras (17:00). Se cuenta 1 hora extra por cada hora
-  //   completa después de la salida normal; quien sale entre 16:00 y 16:59 no genera extras (los minutos sueltos no cuentan).
-  // - Los reingresos del mismo día (y los turnos que no son de día, como los de noche) cuentan por horas completas.
+  // - Horas extra: solo si la salida es a partir de la hora de inicio de extras (17:00). Entonces se cuenta TODO el tiempo
+  //   desde la salida normal (16:00), en minutos reales y sin redondear: salir a las 17:30 = 1 h 30 min de extra.
+  //   Quien sale entre 16:00 y 16:59 no genera extras.
+  // - Los reingresos del mismo día cuentan sus minutos reales como extra; los turnos que no son de día (noche), por su duración.
   // - Un turno sin salida (o que dura varios días) cuenta como asistencia, pero sus horas no se pueden calcular: se marca con •.
   function computeNomina(start, end, days){
     const roster = {};
     function nuevo(id, name, area, resident, former){
-      return {id:id, name:name, area:area, resident:!!resident, former:!!former, cells:{}, total:0, extra:0, noc:0};
+      return {id:id, name:name, area:area, resident:!!resident, former:!!former, cells:{}, totalMins:0, extraMins:0, noc:0};
     }
     state.staff.forEach(p=>{ roster[p.id] = nuevo(p.id, p.name, p.area, p.resident, false); });
 
@@ -2344,7 +2347,7 @@
         const sessions = byPerson[id].slice().sort((a,b)=>(a.entrada||'').localeCompare(b.entrada||''));
         if(!roster[id]) roster[id] = nuevo(id, sessions[0].name, sessions[0].area, false, true);
         const base = nominaBase();
-        let regularMins = 0, extraHours = 0, noc = 0, open = false;
+        let regularMins = 0, extraMins = 0, noc = 0, open = false;
         sessions.forEach((s, idx)=>{
           const variosDias = s.salida && s.salidaFecha && s.salidaFecha !== date;
           const m = calcMinutos(s.entrada, s.salida);
@@ -2358,24 +2361,29 @@
             let reg = Math.min(x, base.normalEnd) - e;
             if(reg >= MIN_JORNADA_ALMUERZO) reg -= MIN_ALMUERZO;
             regularMins += Math.min(reg, JORNADA_MAX);
-            if(x >= base.extraFrom) extraHours += Math.floor((x - base.normalEnd) / 60);
+            if(x >= base.extraFrom) extraMins += (x - base.normalEnd);
           } else if(idx === 0){
             // primer turno que no es de día (por ejemplo de noche): horas completas del turno
             regularMins += (m >= MIN_JORNADA_ALMUERZO) ? m - MIN_ALMUERZO : m;
           } else {
-            // reingreso el mismo día: solo horas completas, como extra
-            extraHours += Math.floor(m / 60);
+            // reingreso el mismo día: sus minutos reales cuentan como extra
+            extraMins += m;
           }
         });
-        const h = (regularMins > 0 || extraHours > 0 || !open) ? Math.round(regularMins/60) + extraHours : null;   // null = presente, horas pendientes
+        const hayTiempo = (regularMins > 0 || extraMins > 0 || !open);          // si no, presente con horas pendientes
+        const dayMins = hayTiempo ? Math.round(regularMins/60) * 60 + extraMins : null;   // la jornada normal se redondea a la hora; los extras no
         const row = roster[id];
-        row.cells[date] = {h:h, extra:extraHours, open:open, noc:noc};
-        if(h != null){ row.total += h; row.extra += extraHours; }
+        row.cells[date] = {mins:dayMins, extraMins:extraMins, open:open, noc:noc};
+        if(dayMins != null){ row.totalMins += dayMins; row.extraMins += extraMins; }
         row.noc += noc;
       });
     });
     return Object.keys(roster).map(id=> roster[id]).filter(r=> !r.former || Object.keys(r.cells).length > 0);
   }
+
+  // Horas en decimal con hasta 2 decimales (570 min -> 9.5)
+  function fmtH(mins){ return String(Math.round(mins / 60 * 100) / 100); }
+  function fmtExtra(mins){ return mins > 0 ? minsToLabel(mins) : ''; }     // 90 -> '1h 30m'
 
   function fmtNoc(mins){
     if(!mins) return '';
@@ -2419,10 +2427,11 @@
     const cache = state.nominaCache[key];
     if(!cache && !state.nominaFailed[key]) setTimeout(()=>loadNominaRange(start, end), 0);
 
-    let allRows = [];
+    let allRows = [], diasMap = {};
     if(cache){
       const days = Object.assign({}, cache.days);
       Object.keys(state.recordsByDate).forEach(d=>{ if(d >= start && d <= end) days[d] = state.recordsByDate[d]; });
+      diasMap = days;
       allRows = computeNomina(start, end, days);
     }
 
@@ -2509,7 +2518,7 @@
     }
 
     if(state.nominaVista === 'comparativa'){
-      renderComparativa(wrap, {start:start, end:end, dates:dates, label:label, mode:mode, today:today, allRows:allRows});
+      renderComparativa(wrap, {start:start, end:end, dates:dates, label:label, mode:mode, today:today, allRows:allRows, days:diasMap});
       return wrap;
     }
 
@@ -2531,11 +2540,11 @@
     let grandHours = 0, grandNoc = 0, grandExtra = 0, withAtt = 0;
     rows.forEach(r=>{
       if(Object.keys(r.cells).length) withAtt++;
-      grandHours += r.total; grandNoc += r.noc; grandExtra += r.extra;
+      grandHours += r.totalMins; grandNoc += r.noc; grandExtra += r.extraMins;
       Object.keys(r.cells).forEach(d=>{
         if(total1[d] == null) return;
         total1[d] += 1;
-        if(r.cells[d].h != null) total2[d] += r.cells[d].h;
+        if(r.cells[d].mins != null) total2[d] += r.cells[d].mins;
       });
     });
 
@@ -2544,8 +2553,8 @@
     stats.className = 'nm-stats';
     stats.innerHTML =
       '<div class="nm-stat hl"><div class="num">'+withAtt+'<small>/'+rows.length+'</small></div><div class="lbl">Personas que asistieron</div></div>'+
-      '<div class="nm-stat"><div class="num">'+grandHours+'<small>h</small></div><div class="lbl">Horas trabajadas</div></div>'+
-      '<div class="nm-stat"><div class="num">'+grandExtra+'<small>h</small></div><div class="lbl">Horas extra</div></div>'+
+      '<div class="nm-stat"><div class="num">'+fmtH(grandHours)+'<small>h</small></div><div class="lbl">Horas trabajadas</div></div>'+
+      '<div class="nm-stat"><div class="num" style="font-size:'+(grandExtra >= 6000 ? '17' : '21')+'px">'+(grandExtra > 0 ? minsToLabel(grandExtra) : '0h')+'</div><div class="lbl">Horas extra</div></div>'+
       '<div class="nm-stat"><div class="num">'+(fmtNoc(grandNoc) || '0')+'<small>h</small></div><div class="lbl">Horas nocturnas 25%</div></div>';
     wrap.appendChild(stats);
 
@@ -2559,9 +2568,9 @@
         if(d === today) return '<td class="c x'+wk+'">–</td>';
         return '<td class="c x'+wk+'">x</td>';
       }
-      if(c.h == null) return '<td class="c dot'+wk+'" title="Presente · sin salida registrada">•</td>';
-      const tip = c.extra > 0 ? ' title="'+(c.h - c.extra)+' normales + '+c.extra+' extra"' : '';
-      return '<td class="c h'+(c.extra > 0 ? ' over' : '')+(c.open ? ' open' : '')+wk+'"'+tip+'>'+c.h+'</td>';
+      if(c.mins == null) return '<td class="c dot'+wk+'" title="Presente · sin salida registrada">•</td>';
+      const tip = c.extraMins > 0 ? ' title="'+fmtH(c.mins - c.extraMins)+' normales + '+minsToLabel(c.extraMins)+' extra"' : '';
+      return '<td class="c h'+(c.extraMins > 0 ? ' over' : '')+(c.open ? ' open' : '')+wk+'"'+tip+'>'+fmtH(c.mins)+'</td>';
     }
 
     const headCols = dates.map(d=>{
@@ -2583,15 +2592,15 @@
       list.forEach(r=>{
         body += '<tr><td class="nm-name">'+escapeHtml(r.name)+'</td>'+
           dates.map(d=>cellHtml(r,d)).join('')+
-          '<td class="nm-tot">'+r.total+'</td>'+
-          '<td class="nm-ext">'+(r.extra || '')+'</td>'+
+          '<td class="nm-tot">'+fmtH(r.totalMins)+'</td>'+
+          '<td class="nm-ext">'+fmtExtra(r.extraMins)+'</td>'+
           '<td class="nm-noc">'+fmtNoc(r.noc)+'</td></tr>';
       });
     });
 
     const foot =
       '<tr><td class="nm-name">Total 1 · Personas</td>'+dates.map(d=>'<td class="c">'+(d > today ? '' : total1[d])+'</td>').join('')+'<td class="nm-tot"></td><td class="nm-ext"></td><td class="nm-noc"></td></tr>'+
-      '<tr><td class="nm-name">Total 2 · Horas</td>'+dates.map(d=>'<td class="c">'+(d > today ? '' : total2[d])+'</td>').join('')+'<td class="nm-tot">'+grandHours+'</td><td class="nm-ext">'+grandExtra+'</td><td class="nm-noc">'+(fmtNoc(grandNoc) || '0')+'</td></tr>';
+      '<tr><td class="nm-name">Total 2 · Horas</td>'+dates.map(d=>'<td class="c">'+(d > today ? '' : fmtH(total2[d]))+'</td>').join('')+'<td class="nm-tot">'+fmtH(grandHours)+'</td><td class="nm-ext">'+fmtExtra(grandExtra)+'</td><td class="nm-noc">'+(fmtNoc(grandNoc) || '0')+'</td></tr>';
 
     const tableCard = document.createElement('div');
     tableCard.className = 'card nm-card';
@@ -2627,19 +2636,19 @@
     const cellText = (r, d)=>{
       const c = r.cells[d];
       if(!c) return d > today ? '' : (d === today ? '–' : 'x');
-      return c.h == null ? 'sin salida' : String(c.h);
+      return c.mins == null ? 'sin salida' : fmtH(c.mins);
     };
     const btnCsv = document.createElement('button');
     btnCsv.className = 'action';
     btnCsv.innerHTML = icon('download',18)+'Descargar CSV';
     btnCsv.onclick = ()=>{
-      const head = ['Nombre','Área'].concat(dates.map(d=> d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4))).concat(['Total horas','Horas extra','Horas nocturnas 25%']);
+      const head = ['Nombre','Área'].concat(dates.map(d=> d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4))).concat(['Total horas (decimal)','Horas extra (h m)','Horas nocturnas 25%']);
       let csv = head.map(csvEscape).join(',')+'\n';
       rows.forEach(r=>{
-        csv += [r.name, r.area].concat(dates.map(d=>cellText(r,d))).concat([r.total, r.extra || '', fmtNoc(r.noc)]).map(csvEscape).join(',')+'\n';
+        csv += [r.name, r.area].concat(dates.map(d=>cellText(r,d))).concat([fmtH(r.totalMins), fmtExtra(r.extraMins), fmtNoc(r.noc)]).map(csvEscape).join(',')+'\n';
       });
       csv += ['Total 1 (personas)',''].concat(dates.map(d=> d > today ? '' : total1[d])).concat(['','','']).map(csvEscape).join(',')+'\n';
-      csv += ['Total 2 (horas)',''].concat(dates.map(d=> d > today ? '' : total2[d])).concat([grandHours, grandExtra, fmtNoc(grandNoc) || 0]).map(csvEscape).join(',')+'\n';
+      csv += ['Total 2 (horas)',''].concat(dates.map(d=> d > today ? '' : fmtH(total2[d]))).concat([fmtH(grandHours), fmtExtra(grandExtra), fmtNoc(grandNoc) || 0]).map(csvEscape).join(',')+'\n';
       downloadFile('nomina_'+(mode==='semana' ? 'semana_' : 'mes_')+start+'.csv', '\ufeff'+csv, 'text/csv;charset=utf-8');
     };
     const btnPdf = document.createElement('button');
@@ -2649,12 +2658,12 @@
       const headers = ['Nombres'].concat(dates.map(dayLabel)).concat(['Total','H. extra','H. noct.']);
       const sections = areaOrder.map(area=>{
         const list = byArea[area];
-        const bodyRows = list.map(r=> [r.name].concat(dates.map(d=>cellText(r,d))).concat([String(r.total), r.extra ? String(r.extra) : '', fmtNoc(r.noc)]));
+        const bodyRows = list.map(r=> [r.name].concat(dates.map(d=>cellText(r,d))).concat([fmtH(r.totalMins), fmtExtra(r.extraMins), fmtNoc(r.noc)]));
         return {heading: area, headers: headers, rows: bodyRows};
       });
       sections.push({heading:'', headers: headers, rows: [
         ['Total 1 · Personas'].concat(dates.map(d=> d > today ? '' : String(total1[d]))).concat(['','','']),
-        ['Total 2 · Horas'].concat(dates.map(d=> d > today ? '' : String(total2[d]))).concat([String(grandHours), String(grandExtra), fmtNoc(grandNoc) || '0'])
+        ['Total 2 · Horas'].concat(dates.map(d=> d > today ? '' : fmtH(total2[d]))).concat([fmtH(grandHours), fmtExtra(grandExtra), fmtNoc(grandNoc) || '0'])
       ]});
       const sub = label + (state.nominaArea !== 'todas' ? ' · '+state.nominaArea : '');
       const colStyles = {0:{cellWidth: mode === 'mes' ? 34 : 38, halign:'left'}};
@@ -2671,14 +2680,20 @@
     note.className = 'card';
     const bb = nominaBase();
     const hh = (m)=> horaBonita(String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'));
-    note.innerHTML = '<p class="nm-note"><b>Cómo se calcula:</b> cada casilla son las horas del día. La jornada normal va de la entrada hasta las <b>'+hh(bb.normalEnd)+'</b>, menos 1 hora de almuerzo, con un máximo de 8 horas. Las <b>horas extra</b> solo cuentan si la salida es a partir de las <b>'+hh(bb.extraFrom)+'</b>, y se cuenta 1 hora por cada hora completa después de las '+hh(bb.normalEnd)+'; quien sale antes (por ejemplo a las 4:30 p. m.) no tiene extras, y los minutos sueltos no suman. Un reingreso el mismo día cuenta por horas completas. <b>x</b> = no asistió. <b>•</b> = estuvo, pero no tiene salida registrada (o se quedó varios días), así que sus horas no se pueden calcular. <b>Total 1</b> = personas que asistieron ese día · <b>Total 2</b> = horas de ese día. Las horas nocturnas 25% son las trabajadas entre las 19:00 y las 06:00. El super usuario puede cambiar las horas en Configuración.</p>';
+    note.innerHTML = '<p class="nm-note"><b>Cómo se calcula:</b> cada casilla son las horas del día. La jornada normal va de la entrada hasta las <b>'+hh(bb.normalEnd)+'</b>, menos 1 hora de almuerzo, con un máximo de 8 horas. Las <b>horas extra</b> solo cuentan si la salida es a partir de las <b>'+hh(bb.extraFrom)+'</b>; entonces se cuenta <b>todo el tiempo desde las '+hh(bb.normalEnd)+'</b>, en minutos reales y sin redondear (salir a las 5:30 p. m. son 1 h 30 min de extra, y la casilla muestra 9.5). Quien sale antes de las '+hh(bb.extraFrom)+' no tiene extras. Un reingreso el mismo día suma sus minutos como extra. Los extras de todos los días se suman en la columna <b>H. extra</b>: en la vista Mes es el total del mes. <b>x</b> = no asistió. <b>•</b> = estuvo, pero no tiene salida registrada (o se quedó varios días), así que sus horas no se pueden calcular. <b>Total 1</b> = personas que asistieron ese día · <b>Total 2</b> = horas de ese día. Las horas nocturnas 25% son las trabajadas entre las 19:00 y las 06:00. El super usuario puede cambiar las horas en Configuración.</p>';
     wrap.appendChild(note);
 
     return wrap;
   }
 
   // ---------- HORARIO DE TRABAJO (carga desde Excel) y COMPARATIVA con la asistencia ----------
-  // En el horario, una casilla con número es un día de trabajo y una "L" es un día libre.
+  // Códigos del cronograma: A = jornada (asistencia programada) · L = libre · V = vacaciones · P = permiso · F = falta · E = extra.
+  // También se entiende el formato anterior (casillas con número = día de trabajo).
+
+  const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const DIA_CLAVES = ['dom','lun','mar','mie','jue','vie','sab'];     // posición = getDay()
+  const DIAS_LARGO = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  const COLOR_COD = {A:'FF00FF00', L:'FF00FFFF', V:'FFDD7E6B', P:'FF0000FF', F:'FFFF0000', E:'FFFFFF00'};   // los mismos colores del formato
 
   function p2(n){ return String(n).padStart(2,'0'); }
   function nombreMes(ym){
@@ -2688,17 +2703,23 @@
   function normNombre(s){
     return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
   }
+  function diasDelMes(y, m){ return new Date(y, m, 0).getDate(); }
+  function colLetra(n){ let s = ''; while(n > 0){ const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
 
-  // El lector de Excel (SheetJS) se descarga solo cuando se usa.
-  function loadXlsxLib(){
-    if(window.XLSX) return Promise.resolve();
-    return new Promise((resolve, reject)=>{
+  // Los lectores/escritores de Excel se descargan solo cuando se usan.
+  function cargarScript(urls, listo){
+    if(listo()) return Promise.resolve();
+    return urls.reduce((p, u)=> p.catch(()=> new Promise((res, rej)=>{
       const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-      s.onload = ()=> resolve();
-      s.onerror = ()=> reject(new Error('No se pudo cargar el lector de Excel. Revisa tu internet.'));
+      s.src = u; s.onload = ()=> (listo() ? res() : rej()); s.onerror = ()=> rej();
       document.head.appendChild(s);
-    });
+    })), Promise.reject()).catch(()=>{ throw new Error('No se pudo cargar el complemento de Excel. Revisa tu internet.'); });
+  }
+  function loadXlsxLib(){
+    return cargarScript(['https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js','https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'], ()=> !!window.XLSX);
+  }
+  function loadExcelJs(){
+    return cargarScript(['https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js','https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'], ()=> !!window.ExcelJS);
   }
 
   function fechaDeCelda(v){
@@ -2719,17 +2740,108 @@
     return null;
   }
 
-  // Convierte la hoja (filas y columnas) en una lista de personas con su horario por fecha.
-  function parseHorarioFilas(aoa){
-    let hdr = -1, best = 0;
-    aoa.forEach((row, i)=>{
-      const n = (row || []).filter(c=> fechaDeCelda(c)).length;
-      if(n > best){ best = n; hdr = i; }
-    });
-    if(hdr < 0 || best < 5) throw new Error('No encontré la fila con las fechas (por ejemplo 01/11/2026). Revisa que el archivo sea el horario.');
-    const fechas = {}; let primera = Infinity;
-    (aoa[hdr] || []).forEach((c, j)=>{ const f = fechaDeCelda(c); if(f){ fechas[j] = f; primera = Math.min(primera, j); } });
+  function claveDiaSemana(v){
+    if(typeof v !== 'string') return -1;
+    const t = normNombre(v);
+    if(!t || t.length > 10) return -1;
+    return DIA_CLAVES.indexOf(t.slice(0,3));
+  }
+  function codigoCelda(v){
+    if(v == null || v === '') return '';
+    if(typeof v === 'number') return 'A';               // formato anterior: un número es un día de trabajo
+    return String(v).trim().toUpperCase().slice(0,3);
+  }
+  function mesDeTexto(t){ const n = normNombre(t); for(let i = 0; i < 12; i++){ if(n.includes(MESES_ES[i])) return i + 1; } return 0; }
+  function anioDeTexto(t){ const m = String(t || '').match(/\b(20\d{2})\b/); return m ? Number(m[1]) : 0; }
 
+  // Mes y año del cronograma: primero una fecha real del encabezado, luego el nombre de la hoja
+  // (los títulos de las celdas suelen quedar con meses viejos). El año se elige para que los días de la semana coincidan.
+  function inferirMes(nombreHoja, aoa, hdr, n, primerDia){
+    let mes = 0, anio = 0;
+    for(let i = 0; i < Math.min(hdr, 6) && !mes; i++){
+      (aoa[i] || []).forEach(v=>{
+        if(!mes && typeof v === 'number' && v > 36500 && v < 73000){ const f = fechaDeCelda(v); if(f){ anio = +f.slice(0,4); mes = +f.slice(5,7); } }
+      });
+    }
+    if(!mes){ mes = mesDeTexto(nombreHoja); if(mes) anio = anioDeTexto(nombreHoja); }
+    if(!mes){
+      for(let i = 0; i < Math.min(hdr, 6) && !mes; i++){
+        (aoa[i] || []).forEach(v=>{ if(!mes && typeof v === 'string'){ const m = mesDeTexto(v); if(m){ mes = m; anio = anioDeTexto(v); } } });
+      }
+    }
+    const hoy = new Date(), cy = hoy.getFullYear();
+    const coincide = (y, m)=> diasDelMes(y, m) === n && new Date(y, m-1, 1).getDay() === primerDia;
+    if(mes){
+      if(!anio){
+        anio = [cy, cy+1, cy-1].find(y=> coincide(y, mes)) || cy;
+      }
+    } else {
+      for(let k = -1; k <= 12 && !mes; k++){
+        const d = new Date(cy, hoy.getMonth() + k, 1);
+        if(coincide(d.getFullYear(), d.getMonth() + 1)){ mes = d.getMonth() + 1; anio = d.getFullYear(); }
+      }
+      if(!mes){ mes = hoy.getMonth() + 1; anio = cy; }
+    }
+    return {mes:mes, anio:anio};
+  }
+
+  // Formato con la fila de días de la semana (DOM, LUN, MAR...) y los códigos A/L/V/P en cada día.
+  function parseHojaSemana(aoa, nombreHoja, hdr, cols){
+    const n = cols.length, primerCol = cols[0].j, primerDia = cols[0].k;
+    // ¿hay una fila de fechas confiable cerca? (en el formato base suele quedar con fechas viejas o vacías)
+    let fechasArchivo = null;
+    [hdr + 1, hdr + 2, hdr - 1].forEach(i=>{
+      if(fechasArchivo || i < 0 || i >= aoa.length) return;
+      const f = cols.map(c=> fechaDeCelda((aoa[i] || [])[c.j]));
+      const buenas = f.filter(x=> x && +x.slice(0,4) >= 2000).length;
+      if(buenas >= Math.ceil(n * 0.7)){
+        const k0 = f.findIndex(x=> x && +x.slice(0,4) >= 2000);
+        const base = addDays(f[k0], -k0);
+        fechasArchivo = cols.map((_, k)=> addDays(base, k));
+      }
+    });
+    let mes, anio;
+    if(fechasArchivo){ mes = +fechasArchivo[0].slice(5,7); anio = +fechasArchivo[0].slice(0,4); }
+    else { const im = inferirMes(nombreHoja, aoa, hdr, n, primerDia); mes = im.mes; anio = im.anio; }
+
+    // columnas de nombre, línea de negocio y cargo (por su encabezado)
+    let cNom = -1, cLin = -1, cCar = -1;
+    for(let i = Math.max(0, hdr - 1); i <= Math.min(aoa.length - 1, hdr + 3); i++){
+      (aoa[i] || []).forEach((v, j)=>{
+        if(j >= primerCol || typeof v !== 'string') return;
+        const t = normNombre(v);
+        if(cNom < 0 && t.startsWith('nombre')) cNom = j;
+        if(cLin < 0 && t.includes('linea')) cLin = j;
+        if(cCar < 0 && t.startsWith('cargo')) cCar = j;
+      });
+    }
+    if(cNom < 0) cNom = (primerCol >= 2 ? 1 : 0);
+
+    const filas = [];
+    for(let i = hdr + 1; i < aoa.length; i++){
+      const row = aoa[i] || [];
+      const nombre = typeof row[cNom] === 'string' ? row[cNom].trim() : '';
+      if(!nombre) continue;
+      if(/^(nombre|total|programad|asistieron|operadores|operacion|cargo|linea)/.test(normNombre(nombre))) continue;
+      const codigos = cols.map(c=> codigoCelda(row[c.j]));
+      if(codigos.filter(x=> x).length < 3) continue;
+      filas.push({
+        name: nombre,
+        cargo: (cCar >= 0 && typeof row[cCar] === 'string') ? row[cCar].trim() : '',
+        linea: (cLin >= 0 && typeof row[cLin] === 'string') ? row[cLin].trim() : '',
+        codigos: codigos
+      });
+    }
+    return {hoja:nombreHoja, n:n, primerDia:primerDia, fechasArchivo:fechasArchivo, mes:mes, anio:anio, filas:filas};
+  }
+
+  // Formato anterior: sin fila de días de la semana, solo una fila de fechas (dd/mm/aaaa).
+  function parseHojaFechas(aoa, nombreHoja){
+    let hdr = -1, best = 0;
+    aoa.forEach((row, i)=>{ const k = (row || []).filter(c=> fechaDeCelda(c)).length; if(k > best){ best = k; hdr = i; } });
+    if(hdr < 0 || best < 5) return null;
+    const cols = []; let primera = Infinity;
+    (aoa[hdr] || []).forEach((c, j)=>{ const f = fechaDeCelda(c); if(f){ cols.push({j:j, f:f}); primera = Math.min(primera, j); } });
     const filas = [];
     for(let i = hdr + 1; i < aoa.length; i++){
       const row = aoa[i] || [];
@@ -2737,38 +2849,53 @@
       for(let j = 0; j < primera; j++){ const v = row[j]; if(typeof v === 'string' && v.trim()) textos.push(v.trim()); }
       if(!textos.length) continue;
       const nombre = textos[0], cargo = textos[1] || '';
-      if(/operadores|operaci[oó]n|total|nombre/i.test(nombre) || /operadores|operaci[oó]n|total/i.test(cargo)) continue;   // filas de resumen
-      const dias = {}; let validos = 0;
-      Object.keys(fechas).forEach(j=>{
-        const v = row[j];
-        if(v == null || v === '') return;
-        let val = null;
-        if(typeof v === 'number') val = v;
-        else {
-          const t = String(v).trim().toUpperCase();
-          if(t === 'L') val = 'L';
-          else if(/^\d+$/.test(t)) val = Number(t);
-          else if(t) val = t;
-        }
-        if(val != null){ dias[fechas[j]] = val; validos++; }
-      });
-      if(validos >= 3) filas.push({name:nombre, cargo:cargo, days:dias});
+      if(/operadores|operaci[oó]n|total|nombre/i.test(nombre) || /operadores|operaci[oó]n|total/i.test(cargo)) continue;
+      const codigos = cols.map(c=> codigoCelda(row[c.j]));
+      if(codigos.filter(x=> x).length < 3) continue;
+      filas.push({name:nombre, cargo:cargo, linea:'', codigos:codigos});
     }
-    if(!filas.length) throw new Error('No encontré personas con su horario en el archivo.');
-    return filas;
+    const fechas = cols.map(c=> c.f);
+    return {hoja:nombreHoja, n:fechas.length, primerDia:parseDate(fechas[0]).getDay(), fechasArchivo:fechas,
+            mes:+fechas[0].slice(5,7), anio:+fechas[0].slice(0,4), filas:filas};
+  }
+
+  function parseHoja(aoa, nombreHoja){
+    let hdr = -1, cols = [];
+    aoa.forEach((row, i)=>{
+      const c = [];
+      (row || []).forEach((v, j)=>{ const k = claveDiaSemana(v); if(k >= 0) c.push({j:j, k:k}); });
+      if(c.length > cols.length){ cols = c; hdr = i; }
+    });
+    if(cols.length >= 14) return parseHojaSemana(aoa, nombreHoja, hdr, cols);
+    return parseHojaFechas(aoa, nombreHoja);
   }
 
   async function leerHorarioArchivo(file){
     await loadXlsxLib();
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, {type:'array'});
-    let ultimo = null;
-    for(let k = 0; k < wb.SheetNames.length; k++){
-      const nombre = wb.SheetNames[k];
+    const wb = XLSX.read(await file.arrayBuffer(), {type:'array'});
+    const cands = []; let ultimo = null;
+    wb.SheetNames.forEach(nombre=>{
       const aoa = XLSX.utils.sheet_to_json(wb.Sheets[nombre], {header:1, raw:true, defval:null});
-      try{ return {hoja: nombre, filas: parseHorarioFilas(aoa)}; }catch(e){ ultimo = e; }
-    }
-    throw ultimo || new Error('El archivo está vacío.');
+      try{ const c = parseHoja(aoa, nombre); if(c && c.filas.length) cands.push(c); }catch(e){ ultimo = e; }
+    });
+    if(!cands.length) throw ultimo || new Error('No encontré personas con su horario. Revisa que cada fila tenga el nombre y el código de cada día (A, L, V, P).');
+    return cands;
+  }
+
+  // Fechas de cada columna de día, según el mes y el año elegidos.
+  function fechasDe(c){
+    if(c.fechasArchivo) return c.fechasArchivo.slice();
+    const dm = diasDelMes(c.anio, c.mes), out = [];
+    for(let i = 0; i < Math.min(c.n, dm); i++) out.push(fmtDate(new Date(c.anio, c.mes - 1, 1 + i)));
+    return out;
+  }
+  function avisoMes(c){
+    if(c.fechasArchivo) return '';
+    const dm = diasDelMes(c.anio, c.mes);
+    if(new Date(c.anio, c.mes - 1, 1).getDay() !== c.primerDia)
+      return 'Los días de la semana del archivo (empieza en '+DIAS_LARGO[c.primerDia].toLowerCase()+') no coinciden con '+nombreMes(c.anio+'-'+p2(c.mes))+'. Revisa el mes y el año.';
+    if(c.n !== dm) return 'El archivo trae '+c.n+' columnas de días y '+nombreMes(c.anio+'-'+p2(c.mes))+' tiene '+dm+'.';
+    return '';
   }
 
   // Sugiere a qué persona de la lista corresponde cada nombre del horario.
@@ -2785,35 +2912,45 @@
     return {id: '', posibles: posibles};
   }
 
-  function armarPrevia(archivo, res){
-    const fechas = [];
-    res.filas.forEach(f=> Object.keys(f.days).forEach(d=> fechas.push(d)));
-    fechas.sort();
-    return {
-      archivo: archivo, hoja: res.hoja, desde: fechas[0], hasta: fechas[fechas.length - 1],
-      filas: res.filas.map(f=>{ const s = sugerirStaff(f.name); return {name:f.name, cargo:f.cargo, days:f.days, staffId:s.id, posibles:s.posibles}; })
-    };
+  function armarPrevia(archivo, cands){
+    const hoy = new Date();
+    const ym = (d)=> d.getFullYear()*100 + d.getMonth() + 1;
+    const actual = ym(hoy), siguiente = ym(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1));
+    let sel = cands.findIndex(c=> c.anio*100 + c.mes === actual);
+    if(sel < 0) sel = cands.findIndex(c=> c.anio*100 + c.mes === siguiente);
+    if(sel < 0) sel = cands.length - 1;
+    cands.forEach(c=>{
+      c.filas.forEach(f=>{ const s = sugerirStaff(f.name); f.staffId = s.id; f.posibles = s.posibles; });
+    });
+    return {archivo:archivo, sel:sel, cands:cands};
   }
 
   async function guardarHorario(prev){
+    const c = prev.cands[prev.sel];
+    const fechas = fechasDe(c);
     const porMes = {};
-    prev.filas.forEach(f=>{
+    c.filas.forEach(f=>{
       if(!f.staffId) return;
-      Object.keys(f.days).forEach(d=>{
+      fechas.forEach((d, i)=>{
+        const cod = f.codigos[i];
+        if(!cod) return;
         const ym = d.slice(0,7);
         porMes[ym] = porMes[ym] || {};
-        const o = porMes[ym][f.staffId] = porMes[ym][f.staffId] || {staffId:f.staffId, name:f.name, cargo:f.cargo, days:{}};
-        o.days[d] = f.days[d];
+        const o = porMes[ym][f.staffId] = porMes[ym][f.staffId] || {staffId:f.staffId, name:f.name, cargo:f.cargo || '', linea:f.linea || '', days:{}};
+        o.days[d] = cod;
       });
     });
     const meses = Object.keys(porMes).sort();
     if(!meses.length){ showToast('Asigna al menos una persona antes de guardar.'); return; }
+    const lineas = c.filas.map(f=> f.linea).filter(x=> x);
+    const linea = lineas.length ? lineas.sort((a,b)=> lineas.filter(v=>v===b).length - lineas.filter(v=>v===a).length)[0] : '';
     state.horarioGuardando = true; render();
     try{
       for(let i = 0; i < meses.length; i++){
         const ym = meses[i];
         await db.collection(COL.meta).doc('horario_'+ym).set({
           rows: Object.keys(porMes[ym]).map(k=> porMes[ym][k]),
+          linea: linea, hoja: c.hoja, archivo: prev.archivo,
           subido: new Date().toISOString(),
           por: (state.session && state.session.nombre) || ''
         });
@@ -2857,10 +2994,9 @@
   function renderHorarioCard(){
     const card = document.createElement('div');
     card.className = 'card';
-    card.innerHTML = '<h2 class="section-title">Horario de trabajo</h2>'+
-      '<p style="margin:0 0 12px;font-size:12.5px;color:var(--texto-suave);line-height:1.5;">Carga el horario del mes (archivo Excel) para comparar los días que le tocaba trabajar a cada persona con los que realmente asistió. Las casillas con número son días de trabajo y las <b>L</b> son días libres. En la pestaña Nómina, la opción <b>Comparativa</b> muestra el resultado.</p>';
+    card.innerHTML = '<h2 class="section-title">Horario de trabajo (cronograma)</h2>'+
+      '<p style="margin:0 0 12px;font-size:12.5px;color:var(--texto-suave);line-height:1.5;">Sube cada mes el formato de asistencia en Excel (<b>cronograma de jornada y descanso</b>). La app lee los códigos de cada día: <b>A</b> jornada, <b>L</b> libre, <b>V</b> vacaciones, <b>P</b> permiso. El mes se toma del nombre de la hoja (por ejemplo NOVIEMBRE). Luego, en Nómina → Comparativa, ves lo programado contra lo que realmente asistió y puedes descargar la hoja de asistencia con el resumen del mes.</p>';
 
-    // horarios ya guardados
     if(state.horariosLista === null) setTimeout(loadHorariosLista, 0);
     if(state.horariosLista && state.horariosLista.length){
       const lista = document.createElement('div');
@@ -2888,7 +3024,6 @@
       card.appendChild(vacio);
     }
 
-    // botón para elegir el archivo
     const lbl = document.createElement('label');
     lbl.className = 'action';
     lbl.style.cursor = 'pointer';
@@ -2899,8 +3034,8 @@
       const f = inp.files && inp.files[0];
       if(!f) return;
       state.horarioLeyendo = true; render();
-      leerHorarioArchivo(f).then(res=>{
-        state.horarioPrevia = armarPrevia(f.name, res);
+      leerHorarioArchivo(f).then(cands=>{
+        state.horarioPrevia = armarPrevia(f.name, cands);
       }).catch(err=>{
         showToast(err && err.message ? err.message : 'No se pudo leer el archivo.');
       }).then(()=>{ state.horarioLeyendo = false; render(); });
@@ -2908,26 +3043,55 @@
     lbl.appendChild(inp);
     card.appendChild(lbl);
 
-    // vista previa para asignar nombres
     const prev = state.horarioPrevia;
     if(prev){
+      const c = prev.cands[prev.sel];
       const box = document.createElement('div');
       box.style.cssText = 'margin-top:16px;border-top:1px solid var(--linea);padding-top:14px;';
-      const sinAsignar = prev.filas.filter(f=> !f.staffId).length;
-      box.innerHTML = '<div style="font-weight:800;margin-bottom:4px;">Revisa a quién corresponde cada nombre</div>'+
-        '<div style="font-size:12.5px;color:var(--texto-suave);font-weight:600;margin-bottom:10px;line-height:1.5;">'+
-          escapeHtml(prev.archivo)+' · del '+escapeHtml(parseDate(prev.desde).toLocaleDateString('es-EC',{day:'numeric',month:'short',year:'numeric'}))+' al '+escapeHtml(parseDate(prev.hasta).toLocaleDateString('es-EC',{day:'numeric',month:'short',year:'numeric'}))+' · '+prev.filas.length+' personas'+
-          (sinAsignar ? '<br><span style="color:var(--barro-osc);">'+sinAsignar+' sin asignar: no se compararán hasta que las asignes.</span>' : '')+
-        '</div>';
-      prev.filas.forEach((f, idx)=>{
+      box.innerHTML = '<div style="font-weight:800;margin-bottom:8px;">Revisa antes de guardar</div>';
+
+      if(prev.cands.length > 1){
+        const lh = document.createElement('label'); lh.className = 'field-label'; lh.textContent = 'Hoja del archivo';
+        const sh = document.createElement('select'); sh.style.marginBottom = '12px';
+        prev.cands.forEach((x, i)=>{ const o = document.createElement('option'); o.value = i; o.textContent = x.hoja+' · '+x.filas.length+' personas'; sh.appendChild(o); });
+        sh.value = prev.sel;
+        sh.onchange = ()=>{ prev.sel = Number(sh.value); render(); };
+        box.appendChild(lh); box.appendChild(sh);
+      }
+
+      // mes y año del cronograma (se toman del nombre de la hoja; se pueden corregir)
+      const fila = document.createElement('div');
+      fila.className = 'row'; fila.style.marginBottom = '10px';
+      const selMes = document.createElement('select');
+      MESES_ES.forEach((m, i)=>{ const o = document.createElement('option'); o.value = i + 1; o.textContent = cap(m); selMes.appendChild(o); });
+      selMes.value = c.mes; selMes.disabled = !!c.fechasArchivo;
+      const selAnio = document.createElement('select');
+      const cy = new Date().getFullYear();
+      [cy - 1, cy, cy + 1].forEach(y=>{ const o = document.createElement('option'); o.value = y; o.textContent = y; selAnio.appendChild(o); });
+      selAnio.value = c.anio; selAnio.disabled = !!c.fechasArchivo;
+      selMes.onchange = ()=>{ c.mes = Number(selMes.value); render(); };
+      selAnio.onchange = ()=>{ c.anio = Number(selAnio.value); render(); };
+      fila.appendChild(selMes); fila.appendChild(selAnio);
+      box.appendChild(fila);
+
+      const fechas = fechasDe(c);
+      const aviso = avisoMes(c);
+      const sinAsignar = c.filas.filter(f=> !f.staffId).length;
+      const info = document.createElement('div');
+      info.style.cssText = 'font-size:12.5px;color:var(--texto-suave);font-weight:600;margin-bottom:10px;line-height:1.5;';
+      info.innerHTML = escapeHtml(prev.archivo)+' · '+escapeHtml(c.hoja)+' · del '+escapeHtml(parseDate(fechas[0]).toLocaleDateString('es-EC',{day:'numeric',month:'short',year:'numeric'}))+
+        ' al '+escapeHtml(parseDate(fechas[fechas.length - 1]).toLocaleDateString('es-EC',{day:'numeric',month:'short',year:'numeric'}))+' · '+c.filas.length+' personas'+
+        (aviso ? '<br><span style="color:var(--danger);">'+escapeHtml(aviso)+'</span>' : '')+
+        (sinAsignar ? '<br><span style="color:var(--barro-osc);">'+sinAsignar+' sin asignar: no se compararán hasta que las asignes.</span>' : '');
+      box.appendChild(info);
+
+      c.filas.forEach(f=>{
         const row = document.createElement('div');
         row.className = 'staff-row';
-        row.style.alignItems = 'flex-start';
-        row.style.flexDirection = 'column';
-        row.style.gap = '6px';
-        const trab = Object.keys(f.days).filter(d=> typeof f.days[d] === 'number').length;
-        const lib = Object.keys(f.days).filter(d=> f.days[d] === 'L').length;
-        row.innerHTML = '<div><div style="font-weight:800;">'+escapeHtml(f.name)+'</div><div class="meta">'+escapeHtml(f.cargo || '')+(f.cargo ? ' · ' : '')+trab+' días de trabajo · '+lib+' libres</div></div>';
+        row.style.alignItems = 'flex-start'; row.style.flexDirection = 'column'; row.style.gap = '6px';
+        const cuenta = (k)=> f.codigos.slice(0, fechas.length).filter(x=> x === k).length;
+        row.innerHTML = '<div><div style="font-weight:800;">'+escapeHtml(f.name)+'</div><div class="meta">'+escapeHtml(f.cargo || '')+(f.cargo ? ' · ' : '')+
+          cuenta('A')+' jornada · '+cuenta('L')+' libres'+(cuenta('V') ? ' · '+cuenta('V')+' vacaciones' : '')+(cuenta('P') ? ' · '+cuenta('P')+' permiso' : '')+'</div></div>';
         const sel = document.createElement('select');
         sel.style.minHeight = '44px'; sel.style.fontSize = '14px';
         const o0 = document.createElement('option'); o0.value = ''; o0.textContent = '— Elegir persona —'; sel.appendChild(o0);
@@ -2965,6 +3129,16 @@
   }
 
   // ---- Pestaña Nómina → Comparativa: días programados contra días asistidos ----
+  function tipoProg(v){
+    if(typeof v === 'number') return 'T';
+    const t = String(v || '').toUpperCase();
+    if(t === 'A' || t === 'F') return 'T';          // jornada programada (F = falta ya marcada en el cronograma)
+    if(t === 'L') return 'L';
+    if(t === 'V') return 'V';
+    if(t === 'P') return 'P';
+    return t ? 'O' : '';
+  }
+
   function renderComparativa(wrap, c){
     const start = c.start, end = c.end, dates = c.dates, today = c.today, mode = c.mode;
     const meses = Array.from(new Set([start.slice(0,7), end.slice(0,7)]));
@@ -2988,13 +3162,14 @@
       return;
     }
 
-    const porStaff = {}; let orden = 0;
+    const porStaff = {}; let orden = 0, linea = '';
     meses.forEach(ym=>{
       const h = state.horarioCache[ym];
       if(!h || !h.rows) return;
+      if(h.linea && !linea) linea = h.linea;
       h.rows.forEach(r=>{
         let o = porStaff[r.staffId];
-        if(!o) o = porStaff[r.staffId] = {staffId:r.staffId, name:r.name, cargo:r.cargo || '', days:{}, orden:orden++};
+        if(!o) o = porStaff[r.staffId] = {staffId:r.staffId, name:r.name, cargo:r.cargo || '', linea:r.linea || '', days:{}, orden:orden++};
         Object.assign(o.days, r.days);
       });
     });
@@ -3014,22 +3189,27 @@
       const p = state.staff.find(x=> x.id === f.staffId);
       f.nombre = p ? p.name : f.name;
       f.area = p ? p.area : 'Sin área';
-      f.est = {}; f.hubo = {};
-      f.ok = 0; f.falt = 0; f.extra = 0;
+      f.est = {}; f.hubo = {}; f.prog = {};
+      f.ok = 0; f.falt = 0; f.extra = 0; f.progTotal = 0; f.libres = 0; f.vac = 0; f.perm = 0;
       dates.forEach(d=>{
         const v = f.days[d];
-        const prog = (typeof v === 'number') ? 'T' : (v === 'L' ? 'L' : (v ? 'O' : ''));
+        const prog = tipoProg(v);
         const hubo = !!(asist[f.staffId] && asist[f.staffId][d]);
         let e;
         if(prog === 'T') e = hubo ? 'ok' : (d < today ? 'falta' : (d === today ? 'hoy' : 'prog'));
         else if(hubo) e = (prog === '') ? 'sinh' : 'extra';
-        else e = (prog === 'L') ? 'libre' : (prog === 'O' ? 'otro' : 'nada');
-        f.est[d] = e; f.hubo[d] = hubo;
+        else e = (prog === 'L') ? 'libre' : (prog === 'V' ? 'vac' : (prog === 'P' ? 'perm' : (prog === 'O' ? 'otro' : 'nada')));
+        f.est[d] = e; f.hubo[d] = hubo; f.prog[d] = prog;
+        if(prog === 'T') f.progTotal++;
+        if(prog === 'L') f.libres++;
+        if(prog === 'V') f.vac++;
+        if(prog === 'P') f.perm++;
         if(e === 'ok') f.ok++;
         if(e === 'falta') f.falt++;
         if(e === 'extra') f.extra++;
       });
     });
+    const todas = filas.slice().sort((a,b)=> a.orden - b.orden);
     if(state.nominaArea !== 'todas') filas = filas.filter(f=> f.area === state.nominaArea);
     filas.sort((a,b)=> a.area.localeCompare(b.area,'es') || a.orden - b.orden);
 
@@ -3050,7 +3230,7 @@
       '<div class="nm-stat hl"><div class="num">'+(cumpl == null ? '–' : cumpl+'<small>%</small>')+'</div><div class="lbl">Cumplimiento del horario</div></div>'+
       '<div class="nm-stat"><div class="num" style="color:'+(tFalt ? 'var(--danger)' : 'inherit')+'">'+tFalt+'</div><div class="lbl">Faltas (les tocaba y no vinieron)</div></div>'+
       '<div class="nm-stat"><div class="num">'+tOk+'</div><div class="lbl">Días cumplidos</div></div>'+
-      '<div class="nm-stat"><div class="num">'+tExtra+'</div><div class="lbl">Trabajó en día libre</div></div>';
+      '<div class="nm-stat"><div class="num">'+tExtra+'</div><div class="lbl">Asistió sin que le tocara</div></div>';
     wrap.appendChild(stats);
 
     const legend = document.createElement('div');
@@ -3059,15 +3239,20 @@
     legend.innerHTML =
       '<span><i style="background:var(--brand)"></i>Asistió</span>'+
       '<span><i style="background:#C9503E"></i>Falta</span>'+
-      '<span><i style="background:#F2C66B"></i>Trabajó en libre</span>'+
+      '<span><i style="background:#F2C66B"></i>Asistió sin que le tocara</span>'+
       '<span><i style="background:#EAF3EC;border:1px solid #BFD8C8"></i>Le toca</span>'+
-      '<span><i style="background:#F0EEE6;border:1px solid var(--line)"></i>Libre</span>';
+      '<span><i style="background:#F0EEE6;border:1px solid var(--line)"></i>Libre</span>'+
+      '<span><i style="background:#DD7E6B"></i>Vacaciones</span>'+
+      '<span><i style="background:#3F6FA0"></i>Permiso</span>';
     wrap.appendChild(legend);
 
-    const nomEst = {ok:'Asistió', falta:'Falta', hoy:'Hoy: aún no registra entrada', prog:'Le toca trabajar', libre:'Día libre', extra:'Trabajó en su día libre', sinh:'Asistió (sin horario cargado ese día)', otro:'Otro', nada:'Sin horario'};
+    const nomEst = {ok:'Asistió', falta:'Falta', hoy:'Hoy: aún no registra entrada', prog:'Le toca trabajar', libre:'Día libre', vac:'Vacaciones', perm:'Permiso',
+      extra:'Asistió sin que le tocara', sinh:'Asistió (sin horario cargado ese día)', otro:'Otro', nada:'Sin horario'};
     function celda(f, d){
       const e = f.est[d];
-      const tip = ' title="'+escapeHtml(formatDateEs(d)+': '+nomEst[e])+'"';
+      let t = nomEst[e];
+      if(e === 'extra') t = {L:'Asistió en su día libre', V:'Asistió estando de vacaciones', P:'Asistió con permiso'}[f.prog[d]] || 'Asistió en un día no programado';
+      const tip = ' title="'+escapeHtml(formatDateEs(d)+': '+t)+'"';
       if(e === 'ok') return '<td class="c k k-ok"'+tip+'>'+icon('check',16)+'</td>';
       if(e === 'falta') return '<td class="c k k-falta"'+tip+'>'+icon('x',16)+'</td>';
       if(e === 'extra') return '<td class="c k k-extra"'+tip+'>'+icon('plus',16)+'</td>';
@@ -3075,6 +3260,8 @@
       if(e === 'hoy') return '<td class="c k k-hoy"'+tip+'>…</td>';
       if(e === 'prog') return '<td class="c k k-prog"'+tip+'>•</td>';
       if(e === 'libre') return '<td class="c k k-libre"'+tip+'>L</td>';
+      if(e === 'vac') return '<td class="c k k-vac"'+tip+'>V</td>';
+      if(e === 'perm') return '<td class="c k k-perm"'+tip+'>P</td>';
       if(e === 'otro') return '<td class="c k k-otro"'+tip+'>'+escapeHtml(String(f.days[d]))+'</td>';
       return '<td class="c k"></td>';
     }
@@ -3099,7 +3286,7 @@
     });
     const progDia = {}, asisDia = {};
     dates.forEach(d=>{
-      progDia[d] = filas.filter(f=> typeof f.days[d] === 'number').length;
+      progDia[d] = filas.filter(f=> f.prog[d] === 'T').length;
       asisDia[d] = filas.filter(f=> f.hubo[d]).length;
     });
     const foot =
@@ -3115,15 +3302,28 @@
     wrap.appendChild(tableCard);
 
     // ---- exportar ----
-    const txt = {ok:'Asistió', falta:'Falta', hoy:'Pendiente hoy', prog:'Le toca', libre:'Libre', extra:'Trabajó en libre', sinh:'Asistió', otro:'Otro', nada:''};
-    const letra = {ok:'A', falta:'F', hoy:'…', prog:'·', libre:'L', extra:'+', sinh:'A', otro:'?', nada:''};
+    const txt = {ok:'Asistió', falta:'Falta', hoy:'Pendiente hoy', prog:'Le toca', libre:'Libre', vac:'Vacaciones', perm:'Permiso', extra:'Asistió sin que le tocara', sinh:'Asistió', otro:'Otro', nada:''};
+    const letra = {ok:'A', falta:'F', hoy:'…', prog:'·', libre:'L', vac:'V', perm:'P', extra:'E', sinh:'A', otro:'?', nada:''};
     const actions = document.createElement('div');
     actions.className = 'card row wrap';
+    if(mode === 'mes'){
+      const btnXls = document.createElement('button');
+      btnXls.className = 'action';
+      btnXls.innerHTML = icon('download',18)+'Descargar hoja de asistencia (Excel)';
+      btnXls.onclick = async ()=>{
+        btnXls.disabled = true; btnXls.textContent = 'Preparando el archivo…';
+        try{
+          await descargarHojaAsistenciaExcel({start:start, end:end, dates:dates, today:today, filas:todas, allRows:c.allRows, days:c.days, linea:linea});
+        }catch(e){ showToast(e && e.message ? e.message : 'No se pudo generar el archivo.'); }
+        render();
+      };
+      actions.appendChild(btnXls);
+    }
     const btnCsv = document.createElement('button');
-    btnCsv.className = 'action';
+    btnCsv.className = mode === 'mes' ? 'action secundario' : 'action';
     btnCsv.innerHTML = icon('download',18)+'Descargar CSV';
     btnCsv.onclick = ()=>{
-      const head = ['Nombre','Cargo','Área'].concat(dates.map(d=> d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4))).concat(['Asistió','Faltas','Trabajó en libre','Cumplimiento %']);
+      const head = ['Nombre','Cargo','Área'].concat(dates.map(d=> d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4))).concat(['Asistió','Faltas','Asistió sin que le tocara','Cumplimiento %']);
       let csv = head.map(csvEscape).join(',')+'\n';
       filas.forEach(f=>{
         const cu = (f.ok + f.falt) ? Math.round(f.ok * 100 / (f.ok + f.falt)) : '';
@@ -3145,7 +3345,7 @@
         ['Programados'].concat(dates.map(d=> String(progDia[d]))).concat(['','']),
         ['Asistieron'].concat(dates.map(d=> d > today ? '' : String(asisDia[d]))).concat([String(tOk), String(tFalt)])
       ]});
-      const sub = c.label + (state.nominaArea !== 'todas' ? ' · '+state.nominaArea : '')+'  —  A = asistió · F = falta · L = libre · + = trabajó en libre · · = le toca';
+      const sub = c.label + (state.nominaArea !== 'todas' ? ' · '+state.nominaArea : '')+'  —  A = asistió · F = falta · L = libre · V = vacaciones · P = permiso · E = asistió sin que le tocara · · = le toca';
       const colStyles = {0:{cellWidth: mode === 'mes' ? 34 : 38, halign:'left'}};
       for(let i = 1; i < headers.length; i++) colStyles[i] = {halign:'center'};
       generarPdf('comparativa_horario_'+(mode==='semana' ? 'semana_' : 'mes_')+start+'.pdf', 'Comparativa · Horario y asistencia', sub, sections,
@@ -3153,13 +3353,313 @@
                        : {fontSize:8.5, cellPadding:2.2, columnStyles:colStyles});
     };
     actions.appendChild(btnCsv); actions.appendChild(btnPdf);
+    if(mode !== 'mes'){
+      const pista = document.createElement('div');
+      pista.style.cssText = 'width:100%;font-size:12.5px;color:var(--texto-suave);font-weight:600;';
+      pista.textContent = 'La hoja de asistencia completa con el resumen del mes se descarga desde la vista Mes.';
+      actions.appendChild(pista);
+    }
     wrap.appendChild(actions);
 
     const note = document.createElement('div');
     note.className = 'card';
-    note.innerHTML = '<p class="nm-note"><b>Cómo se compara:</b> un día cuenta como <b>asistió</b> si el guardia registró la entrada de esa persona ese día. Si le tocaba trabajar y no hay registro, es una <b>falta</b> (los días de hoy y los que vienen no cuentan hasta que pasen). Si no le tocaba (día libre) y vino, aparece como <b>trabajó en libre</b>. El cumplimiento es días cumplidos ÷ (cumplidos + faltas). Se va actualizando solo a medida que se registran las entradas.</p>';
+    note.innerHTML = '<p class="nm-note"><b>Cómo se compara:</b> un día cuenta como <b>asistió</b> si el guardia registró la entrada de esa persona ese día. Si le tocaba trabajar (código A) y no hay registro, es una <b>falta</b> (los días de hoy y los que vienen no cuentan hasta que pasen). Si no le tocaba —libre, vacaciones o permiso— y vino, aparece como <b>asistió sin que le tocara</b> y conviene confirmar quién lo autorizó. Los días de vacaciones (V) y permiso (P) no son faltas. El cumplimiento es días cumplidos ÷ (cumplidos + faltas). Se actualiza solo a medida que se registran las entradas.</p>';
     wrap.appendChild(note);
   }
+
+  // ---- Descarga: hoja de asistencia del mes (Excel) con resumen y novedades ----
+  async function descargarHojaAsistenciaExcel(c){
+    await loadExcelJs();
+    const dates = c.dates, nd = dates.length, today = c.today;
+    const ym = c.start.slice(0,7), Y = +ym.slice(0,4), M = +ym.slice(5,7);
+    const MES = MESES_ES[M - 1].toUpperCase();
+    const corte = c.end < today ? c.end : today;
+    const generado = new Date().toLocaleString('es-EC',{dateStyle:'short', timeStyle:'short'});
+    const usuario = (state.session && (state.session.nombre || ROLE_LABELS[state.session.role])) || '';
+    const lineaNeg = (c.linea || 'PORCICOLA').toUpperCase();
+    const filas = c.filas;
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Portería'; wb.created = new Date();
+    wb.calcProperties = {fullCalcOnLoad: true};
+
+    const thin = {style:'thin', color:{argb:'FF9E9E9E'}};
+    const BORDE = {top:thin, left:thin, bottom:thin, right:thin};
+    function pon(ws, r, col, val, o){
+      o = o || {};
+      const cell = ws.getCell(r, col);
+      if(val !== undefined) cell.value = val;
+      cell.font = {name:'Arial', size:o.size || 10, bold:!!o.bold, italic:!!o.italic, color:{argb:o.color || 'FF000000'}};
+      if(o.fill) cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:o.fill}};
+      cell.alignment = {horizontal:o.h || 'center', vertical:'middle', wrapText:o.wrap !== false};
+      if(o.border !== false) cell.border = BORDE;
+      if(o.fmt) cell.numFmt = o.fmt;
+      return cell;
+    }
+    const codigoDe = (f, d)=>{
+      const e = f.est[d];
+      if(e === 'ok' || e === 'sinh') return 'A';
+      if(e === 'falta') return 'F';
+      if(e === 'libre') return 'L';
+      if(e === 'vac') return 'V';
+      if(e === 'perm') return 'P';
+      if(e === 'extra') return 'E';
+      if(e === 'otro') return String(f.days[d]).slice(0,2);
+      return '';
+    };
+    const colorTexto = (cod)=> (cod === 'P' || cod === 'F') ? 'FFFFFFFF' : 'FF000000';
+
+    // ===== Hoja 1: ASISTENCIA (mismo formato del cronograma, con la asistencia real) =====
+    const ws = wb.addWorksheet('ASISTENCIA '+MES.slice(0,3)+' '+Y, {
+      views:[{state:'frozen', xSplit:4, ySplit:5}],
+      pageSetup:{orientation:'landscape', paperSize:9, fitToPage:true, fitToWidth:1, fitToHeight:0, horizontalCentered:true}
+    });
+    const cD0 = 5, cDN = 4 + nd;
+    const sumCols = ['DIAS JORNADA','ASISTIÓ','FALTAS','LIBRES','VACAC','PERMISO','EXTRA','TOTAL','% CUMPL.'];
+    const cS0 = cDN + 1, cObs = cS0 + sumCols.length, cLast = cObs;
+    ws.getColumn(1).width = 4.5; ws.getColumn(2).width = 34; ws.getColumn(3).width = 16; ws.getColumn(4).width = 22;
+    for(let i = cD0; i <= cDN; i++) ws.getColumn(i).width = 4.6;
+    for(let i = cS0; i < cObs; i++) ws.getColumn(i).width = 9.5;
+    ws.getColumn(cObs).width = 34;
+    [28, 20, 20, 24, 30].forEach((h, i)=>{ ws.getRow(i + 1).height = h; });
+
+    ws.mergeCells(1, 1, 2, 4);
+    pon(ws, 1, 1, MES+' - '+Y, {size:20, bold:true, border:false});
+    ws.mergeCells(1, cD0, 1, cLast);
+    pon(ws, 1, cD0, 'HOJA DE ASISTENCIA · PROGRAMADO VS REAL', {size:16, bold:true, fill:'FFD9EAD3', border:false});
+    ws.mergeCells(2, cD0, 2, cLast);
+    pon(ws, 2, cD0, lineaNeg+'  ·  Corte: '+formatDateEs(corte)+'  ·  Generado: '+generado+(usuario ? ' por '+usuario : ''), {size:9, italic:true, border:false});
+    ws.mergeCells(3, 1, 3, 4);
+    pon(ws, 3, 1, 'LÍNEA DE NEGOCIO: '+lineaNeg, {size:9, bold:true, border:false});
+    [['V','VACACIONES'],['L','LIBRE'],['A','ASISTIÓ'],['P','PERMISO'],['F','FALTA'],['E','EXTRA *']].forEach((it, i)=>{
+      const c0 = cD0 + i * 4;
+      ws.mergeCells(3, c0, 3, c0 + 3);
+      pon(ws, 3, c0, it[0]+' '+it[1], {size:7, bold:true, fill:COLOR_COD[it[0]], color:colorTexto(it[0])});
+    });
+    ws.mergeCells(4, 1, 4, 4);
+    pon(ws, 4, 1, 'REGISTRO DE ASISTENCIA DEL PERSONAL', {size:9, bold:true, fill:'FFC9DAF8'});
+    pon(ws, 5, 1, 'N°', {size:10, bold:true, fill:'FFE0F7FA'});
+    pon(ws, 5, 2, 'NOMBRE', {size:12, bold:true, fill:'FFE0F7FA'});
+    pon(ws, 5, 3, 'LINEA DE NEGOCIO', {size:9, bold:true, fill:'FFE0F7FA'});
+    pon(ws, 5, 4, 'CARGO', {size:12, bold:true, fill:'FFE0F7FA'});
+    dates.forEach((d, i)=>{
+      const k = parseDate(d).getDay();
+      pon(ws, 4, cD0 + i, DIA_CLAVES[k].toUpperCase(), {size:7, bold:true, fill:'FFC9DAF8'});
+      pon(ws, 5, cD0 + i, Number(d.slice(8)), {size:8, bold:true, fill:'FFC9DAF8'});
+    });
+    sumCols.forEach((t, i)=>{
+      ws.mergeCells(4, cS0 + i, 5, cS0 + i);
+      pon(ws, 4, cS0 + i, t, {size:8, bold:true, fill: i === 0 ? 'FFFFF2CC' : (t === 'FALTAS' ? 'FFF4CCCC' : 'FFC9DAF8')});
+    });
+    ws.mergeCells(4, cObs, 5, cObs);
+    pon(ws, 4, cObs, 'OBSERVACIONES', {size:9, bold:true, fill:'FFD9EAD3'});
+
+    const L0 = colLetra(cD0), LN = colLetra(cDN);
+    filas.forEach((f, i)=>{
+      const r = 6 + i;
+      pon(ws, r, 1, i + 1, {size:9});
+      pon(ws, r, 2, f.nombre, {size:11, h:'left'});
+      pon(ws, r, 3, f.linea || lineaNeg, {size:8});
+      pon(ws, r, 4, f.cargo, {size:9});
+      const cnt = {A:0, F:0, L:0, V:0, P:0, E:0}; let llenos = 0;
+      dates.forEach((d, k)=>{
+        const cod = codigoDe(f, d);
+        if(cnt[cod] != null) cnt[cod]++;
+        if(cod) llenos++;
+        pon(ws, r, cD0 + k, cod || null, {size:8, bold:true, fill: COLOR_COD[cod], color: colorTexto(cod)});
+      });
+      const rng = L0+r+':'+LN+r;
+      const fx = (cod, res)=> ({formula:'COUNTIF('+rng+',"'+cod+'")', result:res});
+      pon(ws, r, cS0, f.progTotal, {size:10, fill:'FFFFF2CC'});
+      pon(ws, r, cS0 + 1, fx('A', cnt.A), {size:10, bold:true});
+      pon(ws, r, cS0 + 2, fx('F', cnt.F), {size:10, bold:true, color: cnt.F ? 'FFC00000' : 'FF000000'});
+      pon(ws, r, cS0 + 3, fx('L', cnt.L), {size:10});
+      pon(ws, r, cS0 + 4, fx('V', cnt.V), {size:10});
+      pon(ws, r, cS0 + 5, fx('P', cnt.P), {size:10});
+      pon(ws, r, cS0 + 6, fx('E', cnt.E), {size:10});
+      pon(ws, r, cS0 + 7, {formula:'COUNTA('+rng+')', result:llenos}, {size:10, bold:true});
+      const colA = colLetra(cS0 + 1), colF = colLetra(cS0 + 2);
+      pon(ws, r, cS0 + 8, {formula:'IF('+colA+r+'+'+colF+r+'=0,"",'+colA+r+'/('+colA+r+'+'+colF+r+'))', result:(cnt.A + cnt.F) ? cnt.A / (cnt.A + cnt.F) : ''}, {size:10, bold:true, fmt:'0%'});
+      pon(ws, r, cObs, null, {size:9, h:'left'});
+    });
+    // totales por día
+    const rF = 6 + filas.length;
+    const filaTot = [['PROGRAMADOS', 'FFFFF2CC'], ['ASISTIERON (A + E)', 'FFD9EAD3'], ['FALTAS', 'FFF4CCCC']];
+    filaTot.forEach((t, i)=>{
+      ws.mergeCells(rF + i, 1, rF + i, 4);
+      pon(ws, rF + i, 1, t[0], {size:9, bold:true, fill:t[1], h:'right'});
+    });
+    dates.forEach((d, k)=>{
+      const colL = colLetra(cD0 + k), rg = colL+'6:'+colL+(5 + filas.length);
+      const prog = filas.filter(f=> f.prog[d] === 'T').length;
+      const asis = filas.filter(f=> f.est[d] === 'ok' || f.est[d] === 'sinh' || f.est[d] === 'extra').length;
+      const falt = filas.filter(f=> f.est[d] === 'falta').length;
+      pon(ws, rF, cD0 + k, prog, {size:8, bold:true, fill:'FFFFF2CC'});
+      pon(ws, rF + 1, cD0 + k, {formula:'COUNTIF('+rg+',"A")+COUNTIF('+rg+',"E")', result:asis}, {size:8, bold:true, fill:'FFD9EAD3'});
+      pon(ws, rF + 2, cD0 + k, {formula:'COUNTIF('+rg+',"F")', result:falt}, {size:8, bold:true, fill:'FFF4CCCC'});
+    });
+    for(let i = 0; i < sumCols.length - 1; i++){
+      const colL = colLetra(cS0 + i), rg = colL+'6:'+colL+(5 + filas.length);
+      const total = filas.reduce((s, f)=>{
+        const v = [f.progTotal, f.ok, f.falt, f.libres, f.vac, f.perm, f.extra][i];
+        return s + (v || 0);
+      }, 0);
+      if(i < 7) pon(ws, rF, cS0 + i, {formula:'SUM('+rg+')', result:total}, {size:9, bold:true, fill:'FFC9DAF8'});
+    }
+    // notas y firmas
+    let rN = rF + 4;
+    ws.mergeCells(rN, 1, rN, cLast);
+    pon(ws, rN, 1, '* E = asistió en un día no programado (libre, vacaciones o permiso): requiere autorización de la jefatura.   F = le tocaba trabajar y no hay entrada registrada.   Las vacaciones (V) y los permisos (P) no se cuentan como faltas.', {size:8, italic:true, h:'left', border:false});
+    rN++;
+    ws.mergeCells(rN, 1, rN, cLast);
+    pon(ws, rN, 1, 'Hoja generada a partir de las entradas y salidas registradas en Portería y del cronograma cargado. Los totales por persona y por día son fórmulas: si se corrige un código, se recalculan.', {size:8, italic:true, h:'left', border:false});
+    rN += 3;
+    [['ELABORADO POR', 2, 3], ['REVISADO POR (JEFATURA)', cD0, cD0 + 9], ['APROBADO POR (RR. HH.)', cD0 + 11, cD0 + 20]].forEach(b=>{
+      ws.mergeCells(rN, b[1], rN, b[2]);
+      for(let k = b[1]; k <= b[2]; k++) ws.getCell(rN, k).border = {bottom:{style:'thin', color:{argb:'FF000000'}}};
+      ws.mergeCells(rN + 1, b[1], rN + 1, b[2]);
+      pon(ws, rN + 1, b[1], b[0], {size:8, bold:true, border:false});
+    });
+    ws.pageSetup.printArea = 'A1:'+colLetra(cLast)+(rN + 1);
+
+    // ===== Hoja 2: RESUMEN MENSUAL =====
+    const wr = wb.addWorksheet('RESUMEN MENSUAL', {views:[{state:'frozen', ySplit:7}], pageSetup:{orientation:'landscape', paperSize:9, fitToPage:true, fitToWidth:1, fitToHeight:0}});
+    const heads = ['N°','NOMBRE','LINEA DE NEGOCIO','CARGO','DÍAS DE JORNADA PROGRAMADOS','DÍAS ASISTIDOS','FALTAS','% CUMPLIMIENTO','LIBRES','VACACIONES','PERMISOS','ASISTIÓ SIN QUE LE TOCARA','ENTRADAS SIN SALIDA','HORAS TRABAJADAS','HORAS EXTRA (h:mm)','HORAS EXTRA (decimal)','HORAS NOCTURNAS 25%','OBSERVACIONES'];
+    const anchos = [4.5, 32, 16, 22, 13, 11, 9, 13, 9, 11, 10, 14, 12, 12, 12, 12, 13, 36];
+    anchos.forEach((w, i)=>{ wr.getColumn(i + 1).width = w; });
+    wr.mergeCells(1, 1, 1, heads.length);
+    pon(wr, 1, 1, 'RESUMEN MENSUAL DE ASISTENCIA — '+MES+' '+Y, {size:18, bold:true, fill:'FFD9EAD3', border:false});
+    wr.getRow(1).height = 32;
+    wr.mergeCells(2, 1, 2, heads.length);
+    pon(wr, 2, 1, lineaNeg+'  ·  Corte: '+formatDateEs(corte)+(c.end > today ? '  (mes en curso: los días siguientes aún no cuentan)' : '')+'  ·  Generado: '+generado+(usuario ? ' por '+usuario : ''), {size:9, italic:true, h:'left', border:false});
+    // entradas sin salida por persona (solo días ya pasados)
+    const sinSalida = {};
+    const sinSalidaLista = [];
+    Object.keys(c.days).sort().forEach(d=>{
+      if(d >= today || d < c.start || d > c.end) return;
+      (c.days[d] || []).forEach(rec=>{
+        const p = state.staff.find(x=> x.id === rec.staffId);
+        if(p && p.resident) return;
+        if(rec.salida) return;
+        sinSalida[rec.staffId] = (sinSalida[rec.staffId] || 0) + 1;
+        sinSalidaLista.push({d:d, rec:rec});
+      });
+    });
+    let tProg = 0, tAs = 0, tFa = 0, tLib = 0, tVac = 0, tPer = 0, tEx = 0, tSS = 0, tHm = 0, tExm = 0, tNoc = 0;
+    filas.forEach(f=>{
+      const h = c.allRows.find(x=> x.id === f.staffId) || {totalMins:0, extraMins:0, noc:0};
+      tProg += f.progTotal; tAs += f.ok; tFa += f.falt; tLib += f.libres; tVac += f.vac; tPer += f.perm; tEx += f.extra; tSS += (sinSalida[f.staffId] || 0);
+      tHm += h.totalMins; tExm += h.extraMins; tNoc += h.noc;
+    });
+    // indicadores
+    [[2, 3, 'CUMPLIMIENTO GLOBAL', (tAs + tFa) ? tAs / (tAs + tFa) : '', '0%'], [4, 6, 'FALTAS', tFa, '0'], [7, 11, 'ASISTIÓ SIN QUE LE TOCARA', tEx, '0'], [12, 14, 'ENTRADAS SIN SALIDA (TODO EL PERSONAL)', sinSalidaLista.length, '0']].forEach(k=>{
+      wr.mergeCells(4, k[0], 4, k[1]);
+      pon(wr, 4, k[0], k[2], {size:8, bold:true, fill:'FFC9DAF8'});
+      wr.mergeCells(5, k[0], 5, k[1]);
+      pon(wr, 5, k[0], k[3], {size:16, bold:true, fmt:k[4]});
+    });
+    wr.getRow(5).height = 28;
+    heads.forEach((t, i)=>{ pon(wr, 7, i + 1, t, {size:8, bold:true, fill: i === 6 ? 'FFF4CCCC' : 'FFC9DAF8'}); });
+    wr.getRow(7).height = 42;
+    filas.forEach((f, i)=>{
+      const r = 8 + i;
+      const h = c.allRows.find(x=> x.id === f.staffId) || {totalMins:0, extraMins:0, noc:0};
+      const cum = (f.ok + f.falt) ? f.ok / (f.ok + f.falt) : '';
+      const vals = [i + 1, f.nombre, f.linea || lineaNeg, f.cargo, f.progTotal, f.ok, f.falt, cum, f.libres, f.vac, f.perm, f.extra, sinSalida[f.staffId] || 0,
+        Math.round(h.totalMins / 60 * 100) / 100, h.extraMins ? Math.floor(h.extraMins/60)+':'+p2(h.extraMins % 60) : '', Math.round(h.extraMins / 60 * 100) / 100, Math.round(h.noc / 60 * 100) / 100, null];
+      vals.forEach((v, k)=>{
+        pon(wr, r, k + 1, v, {size: k === 1 ? 11 : 10, h: k === 1 ? 'left' : 'center', bold: k === 6 || k === 7,
+          color: (k === 6 && f.falt) ? 'FFC00000' : 'FF000000', fmt: k === 7 ? '0%' : ((k === 13 || k === 15 || k === 16) ? '0.00' : undefined)});
+      });
+    });
+    const rT = 8 + filas.length;
+    const tot = ['', 'TOTAL', '', '', tProg, tAs, tFa, (tAs + tFa) ? tAs / (tAs + tFa) : '', tLib, tVac, tPer, tEx, tSS, Math.round(tHm / 60 * 100) / 100, tExm ? Math.floor(tExm/60)+':'+p2(tExm % 60) : '', Math.round(tExm / 60 * 100) / 100, Math.round(tNoc / 60 * 100) / 100, ''];
+    tot.forEach((v, k)=>{ pon(wr, rT, k + 1, v, {size:10, bold:true, fill:'FFD9EAD3', fmt: k === 7 ? '0%' : ((k === 13 || k === 15 || k === 16) ? '0.00' : undefined)}); });
+    wr.mergeCells(rT + 2, 1, rT + 2, heads.length);
+    pon(wr, rT + 2, 1, 'Cómo se calcula: días asistidos = días con entrada registrada en una fecha en que le tocaba trabajar · faltas = le tocaba y no hay entrada (hasta la fecha de corte) · % de cumplimiento = asistidos ÷ (asistidos + faltas). Las horas salen de la hora de entrada y de salida menos 1 hora de almuerzo (jornada normal hasta las 16:00, máximo 8 h); las horas extra cuentan desde la salida normal, en minutos reales, cuando la persona sale a partir de las 17:00. Horas nocturnas 25% = entre las 19:00 y las 06:00.', {size:8, italic:true, h:'left', border:false});
+    wr.getRow(rT + 2).height = 54;
+    [['ELABORADO POR', 2, 3], ['REVISADO POR (JEFATURA)', 5, 9], ['APROBADO POR (RR. HH.)', 11, 15]].forEach(b=>{
+      const r = rT + 6;
+      wr.mergeCells(r, b[1], r, b[2]);
+      for(let k = b[1]; k <= b[2]; k++) wr.getCell(r, k).border = {bottom:{style:'thin', color:{argb:'FF000000'}}};
+      wr.mergeCells(r + 1, b[1], r + 1, b[2]);
+      pon(wr, r + 1, b[1], b[0], {size:8, bold:true, border:false});
+    });
+
+    // ===== Hoja 3: NOVEDADES (excepciones para revisar y justificar) =====
+    const wn = wb.addWorksheet('NOVEDADES', {views:[{state:'frozen', ySplit:4}], pageSetup:{orientation:'landscape', paperSize:9, fitToPage:true, fitToWidth:1, fitToHeight:0}});
+    [18, 12, 12, 32, 22, 52, 36, 22].forEach((w, i)=>{ wn.getColumn(i + 1).width = w; });
+    wn.mergeCells(1, 1, 1, 8);
+    pon(wn, 1, 1, 'NOVEDADES DEL MES — '+MES+' '+Y, {size:16, bold:true, fill:'FFD9EAD3', border:false});
+    wn.getRow(1).height = 28;
+    wn.mergeCells(2, 1, 2, 8);
+    pon(wn, 2, 1, 'Excepciones detectadas al comparar el cronograma con las entradas y salidas. Cada una debe quedar justificada y autorizada por la jefatura.', {size:9, italic:true, h:'left', border:false});
+    ['TIPO','FECHA','DÍA','NOMBRE','CARGO','DETALLE','JUSTIFICACIÓN / ACCIÓN','AUTORIZADO POR'].forEach((t, i)=>{ pon(wn, 4, i + 1, t, {size:9, bold:true, fill:'FFC9DAF8'}); });
+    const nov = [];
+    filas.forEach(f=>{
+      dates.forEach(d=>{
+        const e = f.est[d];
+        if(e === 'falta') nov.push({d:d, tipo:'FALTA', color:'FFF4CCCC', f:f, det:'Le tocaba trabajar y no hay entrada registrada.'});
+        if(e === 'extra') nov.push({d:d, tipo:{L:'ASISTIÓ EN DÍA LIBRE', V:'ASISTIÓ EN VACACIONES', P:'ASISTIÓ CON PERMISO'}[f.prog[d]] || 'ASISTIÓ SIN PROGRAMACIÓN', color:'FFFFF2CC', f:f, det:'Asistió en un día en que no le tocaba trabajar: requiere autorización.'});
+        if(e === 'sinh') nov.push({d:d, tipo:'ASISTIÓ SIN HORARIO CARGADO', color:'FFFFF2CC', f:f, det:'Hay entrada registrada, pero el cronograma no tiene código para ese día.'});
+      });
+    });
+    sinSalidaLista.forEach(x=>{
+      const p = state.staff.find(s=> s.id === x.rec.staffId);
+      nov.push({d:x.d, tipo:'ENTRADA SIN SALIDA', color:'FFFCE5CD', f:{nombre: x.rec.name || (p && p.name) || '', cargo: ''}, det:'Entró a las '+x.rec.entrada+' y no tiene salida registrada: sus horas no se pueden calcular.'});
+    });
+    nov.sort((a,b)=> a.d.localeCompare(b.d) || a.f.nombre.localeCompare(b.f.nombre,'es'));
+    nov.forEach((n, i)=>{
+      const r = 5 + i;
+      const dow = DIAS_LARGO[parseDate(n.d).getDay()];
+      [n.tipo, formatDateShort(n.d), dow, n.f.nombre, n.f.cargo || '', n.det, null, null].forEach((v, k)=>{
+        pon(wn, r, k + 1, v, {size:9, h: (k === 3 || k === 5) ? 'left' : 'center', fill: k === 0 ? n.color : undefined, bold: k === 0});
+      });
+    });
+    if(!nov.length){
+      wn.mergeCells(5, 1, 5, 8);
+      pon(wn, 5, 1, 'Sin novedades en el periodo.', {size:10, italic:true, border:false});
+    }
+
+    // ===== Hoja 4: MARCACIONES (evidencia de entradas y salidas) =====
+    const wm = wb.addWorksheet('MARCACIONES', {views:[{state:'frozen', ySplit:4}], pageSetup:{orientation:'landscape', paperSize:9, fitToPage:true, fitToWidth:1, fitToHeight:0}});
+    [12, 12, 32, 26, 10, 10, 13, 18, 18, 14].forEach((w, i)=>{ wm.getColumn(i + 1).width = w; });
+    wm.mergeCells(1, 1, 1, 10);
+    pon(wm, 1, 1, 'ENTRADAS Y SALIDAS REGISTRADAS — '+MES+' '+Y, {size:16, bold:true, fill:'FFD9EAD3', border:false});
+    wm.getRow(1).height = 28;
+    wm.mergeCells(2, 1, 2, 10);
+    pon(wm, 2, 1, 'Detalle de cada marcación hecha en la portería (evidencia del resumen). Incluye a todo el personal que registró entrada en el mes.', {size:9, italic:true, h:'left', border:false});
+    ['FECHA','DÍA','NOMBRE','ÁREA','ENTRADA','SALIDA','DURACIÓN (h)','REGISTRÓ ENTRADA','REGISTRÓ SALIDA','EN CRONOGRAMA'].forEach((t, i)=>{ pon(wm, 4, i + 1, t, {size:9, bold:true, fill:'FFC9DAF8'}); });
+    const enCrono = {}; filas.forEach(f=>{ enCrono[f.staffId] = true; });
+    let rm = 5;
+    Object.keys(c.days).sort().forEach(d=>{
+      if(d < c.start || d > c.end) return;
+      (c.days[d] || []).slice().sort((a,b)=> (a.name || '').localeCompare(b.name || '','es') || (a.entrada || '').localeCompare(b.entrada || '')).forEach(rec=>{
+        const mins = calcMinutos(rec.entrada, rec.salida);
+        [formatDateShort(d), DIAS_LARGO[parseDate(d).getDay()], rec.name || '', rec.area || '', rec.entrada || '', rec.salida || (rec.salidaFecha ? '' : 'SIN SALIDA'),
+         mins == null ? '' : Math.round(mins / 60 * 100) / 100, rec.entradaPor || '', rec.salidaPor || '', enCrono[rec.staffId] ? 'Sí' : 'No'].forEach((v, k)=>{
+          pon(wm, rm, k + 1, v, {size:9, h: (k === 2 || k === 3) ? 'left' : 'center', fmt: k === 6 ? '0.00' : undefined,
+            fill: (k === 5 && v === 'SIN SALIDA') ? 'FFFCE5CD' : undefined, bold: (k === 5 && v === 'SIN SALIDA')});
+        });
+        rm++;
+      });
+    });
+    if(rm === 5){
+      wm.mergeCells(5, 1, 5, 10);
+      pon(wm, 5, 1, 'No hay marcaciones en el periodo.', {size:10, italic:true, border:false});
+    }
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'asistencia_'+MES+'_'+Y+'.xlsx';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=> URL.revokeObjectURL(url), 4000);
+    showToast('Hoja de asistencia descargada.');
+  }
+
+  function formatDateShort(d){ return d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4); }
 
   // ---------- ALERTA: salidas sin registrar ----------
   const ALERTA_HORA_DEFAULT = '16:30';

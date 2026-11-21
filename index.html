@@ -397,7 +397,7 @@
 
 <script>
 (function(){
-  const APP_VERSION = 'v2026-11-20 EXTRAS INGRESO';
+  const APP_VERSION = 'v2026-11-20 EXTRAS INGRESO + JORNADA COMPLETA';
   // ⚠️ Pega aquí el firebaseConfig de tu proyecto (Firebase console → Configuración del proyecto → Tus apps)
   const firebaseConfig = {
     apiKey: "AIzaSyAzoh4UHDyXVt7lpK82NhSanBs6u89j2U8",
@@ -2370,7 +2370,8 @@
   const DOW_LETTER_MON = ['L','M','M','J','V','S','D'];            // lunes primero
   const MIN_JORNADA_ALMUERZO = 300;   // el almuerzo (60 min) se descuenta si el primer turno dura 5 h o más
   const MIN_ALMUERZO = 60;
-  const JORNADA_MAX = 480;            // la jornada normal paga como máximo 8 h
+  const JORNADA_MAX = 480;            // referencia de 8 h para identificar horas extra
+  const FECHA_INICIO_CALCULO_COMPLETO = '2026-11-16'; // desde esta semana se calcula la jornada completa para el personal seleccionado
 
   function toMin(hhmm){ const p = String(hhmm || '0:0').split(':').map(Number); return (p[0] || 0)*60 + (p[1] || 0); }
   // Horario base: a qué hora termina la jornada normal y desde cuándo cuentan las horas extra.
@@ -2437,6 +2438,10 @@
         if(!roster[id]) roster[id] = nuevo(id, sessions[0].name, sessions[0].area, false, true);
         const base = nominaBase();
         let regularMins = 0, extraMins = 0, noc = 0, open = false, tarde = 0, entrada1 = '';
+        // Desde el lunes 16/11/2026, el personal seleccionado se calcula por tiempo total:
+        // suma de los turnos registrados en el día menos 1 hora de almuerzo (sin tope de 8 h).
+        const jornadaCompleta = date >= FECHA_INICIO_CALCULO_COMPLETO && base.extraIngresoIds.includes(id);
+        let minutosTrabajadosDia = 0;
         sessions.forEach((s, idx)=>{
           const variosDias = s.salida && s.salidaFecha && s.salidaFecha !== date;
           const m = calcMinutos(s.entrada, s.salida);
@@ -2445,6 +2450,12 @@
           const cruzaMedianoche = (xRaw <= e);
           const x = cruzaMedianoche ? xRaw + 1440 : xRaw;
           noc += minutosNocturnos(s.entrada, s.salida);
+          if(jornadaCompleta){
+            minutosTrabajadosDia += m;
+            if(idx === 0) entrada1 = s.entrada;
+            if(idx === 0 && base.entradaNormal >= 0 && (e - base.entradaNormal) > base.tolerancia) tarde = e - base.entradaNormal;
+            return;
+          }
           if(idx === 0 && e < base.normalEnd && !cruzaMedianoche){
             // turno de día: jornada normal + horas extra
             entrada1 = s.entrada;
@@ -2464,8 +2475,13 @@
             extraMins += m;
           }
         });
+        if(jornadaCompleta && !open){
+          const neto = Math.max(0, minutosTrabajadosDia - (minutosTrabajadosDia >= MIN_JORNADA_ALMUERZO ? MIN_ALMUERZO : 0));
+          extraMins = Math.max(0, neto - JORNADA_MAX);
+          regularMins = neto - extraMins;
+        }
         const hayTiempo = (regularMins > 0 || extraMins > 0 || !open);          // si no, presente con horas pendientes
-        const dayMins = hayTiempo ? Math.round(regularMins/60) * 60 + extraMins : null;   // la jornada normal se redondea a la hora; los extras no
+        const dayMins = hayTiempo ? (jornadaCompleta ? regularMins + extraMins : Math.round(regularMins/60) * 60 + extraMins) : null;
         const row = roster[id];
         row.cells[date] = {mins:dayMins, extraMins:extraMins, open:open, noc:noc, tarde:tarde, entrada:entrada1};
         if(dayMins != null){ row.totalMins += dayMins; row.extraMins += extraMins; }
@@ -2774,7 +2790,7 @@
     note.className = 'card';
     const bb = nominaBase();
     const hh = (m)=> horaBonita(String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'));
-    note.innerHTML = '<p class="nm-note"><b>Cómo se calcula:</b> cada casilla son las horas del día. La jornada normal va de la entrada hasta las <b>'+hh(bb.normalEnd)+'</b>, menos 1 hora de almuerzo, con un máximo de 8 horas. Las <b>horas extra</b> solo cuentan si la salida es a partir de las <b>'+hh(bb.extraFrom)+'</b>; entonces se cuenta <b>todo el tiempo desde las '+hh(bb.normalEnd)+'</b>, en minutos reales y sin redondear (salir a las 5:30 p. m. son 1 h 30 min de extra, y la casilla muestra 9.5). Quien sale antes de las '+hh(bb.extraFrom)+' no tiene extras. Un reingreso el mismo día suma sus minutos como extra. Los extras de todos los días se suman en la columna <b>H. extra</b>: en la vista Mes es el total del mes. <b>x</b> = no asistió. <b>•</b> = estuvo, pero no tiene salida registrada (o se quedó varios días), así que sus horas no se pueden calcular. <b>Total 1</b> = personas que asistieron ese día · <b>Total 2</b> = horas de ese día. Las horas nocturnas 25% son las trabajadas entre las 19:00 y las 06:00. El super usuario puede cambiar las horas en Configuración.</p>';
+    note.innerHTML = '<p class="nm-note"><b>Cómo se calcula:</b> cada casilla son las horas del día. Para el personal seleccionado en <b>Horas extras desde el ingreso a la granja</b>, desde el 16/11/2026 se suman los turnos registrados desde el ingreso hasta la salida y se descuenta 1 hora de almuerzo, sin límite de 8 horas; lo que supere 8 horas netas se refleja como horas extra. Para el resto del personal y fechas anteriores se mantiene el cálculo habitual: jornada normal hasta las <b>'+hh(bb.normalEnd)+'</b>, menos 1 hora de almuerzo y máximo 8 horas; las extras se calculan según la hora configurada de salida. <b>x</b> = no asistió. <b>•</b> = estuvo, pero no tiene salida registrada (o se quedó varios días), así que sus horas no se pueden calcular. <b>Total 1</b> = personas que asistieron ese día · <b>Total 2</b> = horas de ese día. Las horas nocturnas 25% son las trabajadas entre las 19:00 y las 06:00. El super usuario puede cambiar las horas en Configuración.</p>';
     wrap.appendChild(note);
 
     return wrap;

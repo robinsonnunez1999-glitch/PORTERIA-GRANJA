@@ -397,7 +397,7 @@
 
 <script>
 (function(){
-  const APP_VERSION = 'v2026-11-10 CONTROLES';
+  const APP_VERSION = 'v2026-11-20 EXTRAS INGRESO';
   // ⚠️ Pega aquí el firebaseConfig de tu proyecto (Firebase console → Configuración del proyecto → Tus apps)
   const firebaseConfig = {
     apiKey: "AIzaSyAzoh4UHDyXVt7lpK82NhSanBs6u89j2U8",
@@ -493,7 +493,7 @@
     nominaScroll: 0,
     nominaScrollKey: '',
     alertaHora: '16:30',    // hora límite para avisar de salidas sin registrar
-    nominaBase: {salidaNormal:'16:00', extraDesde:'17:00', entradaNormal:'', tolerancia:10},   // horario base de la nómina
+    nominaBase: {salidaNormal:'16:00', extraDesde:'17:00', entradaNormal:'', tolerancia:10, extraIngresoDesde:'07:00', extraIngresoIds:[]},   // horario base de la nómina
     novedadesCache: {}, novedadesLoading: {}, novedadesFailed: {}, novedadHoy: {}, horarioHoy: null,
     modalNovedad: null, renderPendiente: false,
     cierreCache: {}, auditoriaLista: null, auditoriaCargando: false,
@@ -663,7 +663,7 @@
     db.collection(COL.meta).doc('nomina').onSnapshot(snap=>{
       const d = snap.exists ? snap.data() : {};
       const ok = (v)=> (v && /^\d\d:\d\d$/.test(v)) ? v : null;
-      state.nominaBase = {salidaNormal: ok(d.salidaNormal) || '16:00', extraDesde: ok(d.extraDesde) || '17:00', entradaNormal: ok(d.entradaNormal) || '', tolerancia: (d.tolerancia != null && !isNaN(Number(d.tolerancia))) ? Number(d.tolerancia) : 10};
+      state.nominaBase = {salidaNormal: ok(d.salidaNormal) || '16:00', extraDesde: ok(d.extraDesde) || '17:00', entradaNormal: ok(d.entradaNormal) || '', tolerancia: (d.tolerancia != null && !isNaN(Number(d.tolerancia))) ? Number(d.tolerancia) : 10, extraIngresoDesde: ok(d.extraIngresoDesde) || '07:00', extraIngresoIds: Array.isArray(d.extraIngresoIds) ? d.extraIngresoIds : []};
       render();
     });
 
@@ -2077,7 +2077,7 @@
       if(b < a){ showToast('Las extras no pueden empezar antes de la salida normal.'); return; }
       if(e && e >= a){ showToast('La entrada normal debe ser antes de la salida normal.'); return; }
       try{
-        await db.collection(COL.meta).doc('nomina').set({salidaNormal: a, extraDesde: b, entradaNormal: e || '', tolerancia: t});
+        await db.collection(COL.meta).doc('nomina').set({salidaNormal: a, extraDesde: b, entradaNormal: e || '', tolerancia: t, extraIngresoDesde: state.nominaBase.extraIngresoDesde || '07:00', extraIngresoIds: state.nominaBase.extraIngresoIds || []});
         registrarAuditoria('config_nomina', 'Salida normal '+a+' · extras desde '+b+' · entrada normal '+(e || 'sin controlar')+' · tolerancia '+t+' min');
         showToast('Horario guardado: sale '+horaBonita(a)+', extras desde '+horaBonita(b)+(e ? ', entrada '+horaBonita(e) : ''));
       }catch(err){ showToast('No se pudo guardar. Revisa tu internet.'); }
@@ -2085,6 +2085,41 @@
     baseCard.appendChild(lblSal); baseCard.appendChild(inSal); baseCard.appendChild(lblExt); baseCard.appendChild(inExt);
     baseCard.appendChild(lblEnt); baseCard.appendChild(inEnt); baseCard.appendChild(lblTol); baseCard.appendChild(inTol); baseCard.appendChild(btnBase);
     wrap.appendChild(baseCard);
+
+    // Personal al que se le reconocen extras desde el ingreso temprano.
+    const tempranoCard = document.createElement('div');
+    tempranoCard.className = 'card';
+    tempranoCard.innerHTML = '<h2 class="section-title">Horas extras desde el ingreso a la granja</h2><p style="margin:0 0 12px;font-size:12.5px;color:var(--texto-suave);line-height:1.5;">Selecciona las personas que generan horas extras antes de su hora normal de ingreso. La selección utiliza el personal registrado en la aplicación; cuando agregues nuevos trabajadores, aparecerán aquí para que puedas incluirlos o quitarlos.</p>';
+    const lblTemprano = document.createElement('label'); lblTemprano.className = 'field-label'; lblTemprano.textContent = 'Hora desde la que inicia la jornada normal';
+    const horaTemprano = document.createElement('input'); horaTemprano.type = 'time'; horaTemprano.value = state.nominaBase.extraIngresoDesde || '07:00'; horaTemprano.style.marginBottom = '12px';
+    tempranoCard.appendChild(lblTemprano); tempranoCard.appendChild(horaTemprano);
+    const listaTemprano = document.createElement('div');
+    listaTemprano.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:4px 0 14px;';
+    const seleccionadosTemprano = new Set(state.nominaBase.extraIngresoIds || []);
+    (state.staff || []).slice().sort((a,b)=>(a.area||'').localeCompare(b.area||'') || (a.name||'').localeCompare(b.name||'')).forEach(persona=>{
+      const label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid var(--borde,#ddd);border-radius:9px;font-size:13px;';
+      const check = document.createElement('input'); check.type = 'checkbox'; check.checked = seleccionadosTemprano.has(persona.id); check.value = persona.id;
+      check.style.cssText = 'width:17px;height:17px;flex:0 0 auto;';
+      const nombre = document.createElement('span'); nombre.textContent = (persona.name || 'Sin nombre') + (persona.area ? ' · '+persona.area : '');
+      label.appendChild(check); label.appendChild(nombre); listaTemprano.appendChild(label);
+    });
+    if(!(state.staff || []).length){ const vacio = document.createElement('p'); vacio.textContent = 'Primero agrega personas en la sección Personal.'; listaTemprano.appendChild(vacio); }
+    tempranoCard.appendChild(listaTemprano);
+    const btnTemprano = document.createElement('button'); btnTemprano.className = 'action secundario'; btnTemprano.textContent = 'Guardar personal seleccionado';
+    btnTemprano.onclick = async ()=>{
+      const hora = horaTemprano.value;
+      if(!/^\d\d:\d\d$/.test(hora)){ showToast('Selecciona una hora válida.'); return; }
+      if(hora >= (state.nominaBase.salidaNormal || '16:00')){ showToast('La hora de ingreso normal debe ser antes de la salida normal.'); return; }
+      const ids = Array.from(listaTemprano.querySelectorAll('input[type="checkbox"]:checked')).map(el=>el.value);
+      try{
+        await db.collection(COL.meta).doc('nomina').set({extraIngresoDesde:hora, extraIngresoIds:ids},{merge:true});
+        registrarAuditoria('config_extras_ingreso', 'Extras desde '+hora+' para '+ids.length+' personas');
+        showToast('Configuración guardada para '+ids.length+' personas.');
+      }catch(err){ showToast('No se pudo guardar. Revisa tu internet.'); }
+    };
+    tempranoCard.appendChild(btnTemprano);
+    wrap.appendChild(tempranoCard);
     wrap.appendChild(renderAuditoriaCard());
 
     const pinCard = document.createElement('div');
@@ -2342,7 +2377,8 @@
   function nominaBase(){
     const b = state.nominaBase || {};
     return {normalEnd: toMin(b.salidaNormal || '16:00'), extraFrom: toMin(b.extraDesde || '17:00'),
-      entradaNormal: b.entradaNormal ? toMin(b.entradaNormal) : -1, tolerancia: Number(b.tolerancia) || 0};
+      entradaNormal: b.entradaNormal ? toMin(b.entradaNormal) : -1, tolerancia: Number(b.tolerancia) || 0,
+      extraIngresoDesde: toMin(b.extraIngresoDesde || '07:00'), extraIngresoIds: Array.isArray(b.extraIngresoIds) ? b.extraIngresoIds : []};
   }
 
   // Trae de una vez todos los días del rango (el ID del documento es la fecha).
@@ -2413,7 +2449,10 @@
             // turno de día: jornada normal + horas extra
             entrada1 = s.entrada;
             if(base.entradaNormal >= 0 && (e - base.entradaNormal) > base.tolerancia) tarde = e - base.entradaNormal;
-            let reg = Math.min(x, base.normalEnd) - e;
+            const extraDesdeIngreso = base.extraIngresoIds.includes(id) ? base.extraIngresoDesde : null;
+            const inicioRegular = (extraDesdeIngreso != null && e < extraDesdeIngreso) ? extraDesdeIngreso : e;
+            if(extraDesdeIngreso != null && e < extraDesdeIngreso) extraMins += Math.max(0, Math.min(x, extraDesdeIngreso) - e);
+            let reg = Math.max(0, Math.min(x, base.normalEnd) - inicioRegular);
             if(reg >= MIN_JORNADA_ALMUERZO) reg -= MIN_ALMUERZO;
             regularMins += Math.min(reg, JORNADA_MAX);
             if(x >= base.extraFrom) extraMins += (x - base.normalEnd);

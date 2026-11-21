@@ -361,6 +361,26 @@
   .nm-grid td.k-sinh{background:#fff;color:var(--brand-2);}
   .nm-grid td.k-vac{background:#DD7E6B;color:#fff;font:800 12px var(--mono);}
   .nm-grid td.k-perm{background:#3F6FA0;color:#fff;font:800 12px var(--mono);}
+  /* ---------- Novedades, cierre de mes y puntualidad ---------- */
+  .modal-card.form{text-align:left;max-width:400px;max-height:92vh;overflow-y:auto;}
+  .modal-card.form .avatar{margin:0 0 10px;}
+  .modal-card.form h2{margin:0 0 4px;font-size:18px;}
+  .modal-card.form > p{margin:0 0 14px;}
+  .mform label.field-label{margin-top:12px;}
+  .mform label.field-label:first-child{margin-top:0;}
+  .mform .merr{margin-top:10px;color:var(--danger);font-size:13px;font-weight:700;}
+  .mform .mnota{margin-top:10px;color:var(--muted);font-size:12px;font-weight:600;line-height:1.45;}
+  .nm-grid td.k-just{background:#F6B26B;color:#4A2A00;font:800 12px var(--mono);}
+  .nm-grid td.k-nov{box-shadow:inset 0 0 0 2px #3B3B3B;}
+  .nm-grid td.k-tarde{position:relative;}
+  .nm-grid td.k-tarde::after{content:"";position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:#F28C28;box-shadow:0 0 0 1.5px #fff;}
+  .nm-pista{font-size:12.5px;color:var(--muted);font-weight:600;margin:-4px 2px 14px;line-height:1.45;}
+  .cierre-banner .cb-head{display:flex;gap:12px;align-items:flex-start;}
+  .cierre-banner .cb-ic{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand);flex:0 0 auto;}
+  .cierre-banner.cerrado{background:#FFF8E1;border-color:#E9CE7A;}
+  .cierre-banner.cerrado .cb-ic{background:#F2C66B;color:#5B3F08;}
+  .cierre-banner .cb-t{font-weight:800;font-size:15px;}
+  .cierre-banner .cb-s{font-size:12.5px;color:var(--muted);font-weight:600;line-height:1.5;margin-top:2px;}
   .nm-grid td.k-otro{background:#EDEDED;color:#777;font:700 11px var(--mono);}
   .nm-grid .nm-sum{min-width:40px;font:800 13.5px var(--mono);background:var(--brand-soft);color:var(--brand-dark);}
   .nm-grid td.nm-sum.bad{color:var(--danger);}
@@ -377,7 +397,7 @@
 
 <script>
 (function(){
-  const APP_VERSION = 'v2026-11-07 CRONOGRAMA';
+  const APP_VERSION = 'v2026-11-10 CONTROLES';
   // ⚠️ Pega aquí el firebaseConfig de tu proyecto (Firebase console → Configuración del proyecto → Tus apps)
   const firebaseConfig = {
     apiKey: "AIzaSyAzoh4UHDyXVt7lpK82NhSanBs6u89j2U8",
@@ -393,7 +413,9 @@
   const COL = {
     meta: 'porteria_meta',       // docs: staff, areas, auth
     records: 'porteria_records', // doc id = fecha (personal fijo)
-    visitors: 'porteria_visitantes' // doc id = fecha (visitantes)
+    visitors: 'porteria_visitantes', // doc id = fecha (visitantes)
+    novedades: 'porteria_novedades', // doc id = persona_fecha (justificaciones, permisos, autorizaciones)
+    auditoria: 'porteria_auditoria'  // registro de cambios
   };
 
   const STORAGE_KEYS = {
@@ -471,7 +493,10 @@
     nominaScroll: 0,
     nominaScrollKey: '',
     alertaHora: '16:30',    // hora límite para avisar de salidas sin registrar
-    nominaBase: {salidaNormal:'16:00', extraDesde:'17:00'},   // horario base de la nómina
+    nominaBase: {salidaNormal:'16:00', extraDesde:'17:00', entradaNormal:'', tolerancia:10},   // horario base de la nómina
+    novedadesCache: {}, novedadesLoading: {}, novedadesFailed: {}, novedadHoy: {}, horarioHoy: null,
+    modalNovedad: null, renderPendiente: false,
+    cierreCache: {}, auditoriaLista: null, auditoriaCargando: false,
     nominaVista: 'horas',          // 'horas' | 'comparativa'
     horarioCache: {}, horarioLoading: {}, horarioFailed: {},
     horariosLista: null, horarioListaCargando: false,
@@ -523,6 +548,7 @@
     x:'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
     plus:'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
     upload:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
+    lock:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
     sun:'<circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.9" y1="4.9" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.1" y2="19.1"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/>'
   };
   function icon(name, size){
@@ -637,12 +663,13 @@
     db.collection(COL.meta).doc('nomina').onSnapshot(snap=>{
       const d = snap.exists ? snap.data() : {};
       const ok = (v)=> (v && /^\d\d:\d\d$/.test(v)) ? v : null;
-      state.nominaBase = {salidaNormal: ok(d.salidaNormal) || '16:00', extraDesde: ok(d.extraDesde) || '17:00'};
+      state.nominaBase = {salidaNormal: ok(d.salidaNormal) || '16:00', extraDesde: ok(d.extraDesde) || '17:00', entradaNormal: ok(d.entradaNormal) || '', tolerancia: (d.tolerancia != null && !isNaN(Number(d.tolerancia))) ? Number(d.tolerancia) : 10};
       render();
     });
 
     subscribeRecords(todayStr());
     subscribeVisitors(todayStr());
+    suscribirControlHoy();
     render();
   }
 
@@ -758,6 +785,14 @@
     if(isInside(person.id, date)){
       showToast(person.name + ' ya está dentro.');
       return;
+    }
+    const pr = progDeHoy(person.id);
+    if(pr && (pr.prog === 'L' || pr.prog === 'V' || pr.prog === 'P')){
+      const aut = await pedirAutorizacionEntrada(person, pr.prog);
+      if(!aut){ showToast('Entrada no registrada.'); return; }
+      try{
+        await guardarNovedad({staffId:person.id, nombre:person.name, fecha:date, codigo:'A', motivo:aut.motivo, autoriza:aut.autoriza}, true);
+      }catch(err){ showToast('No se pudo guardar la autorización. Revisa tu internet.'); return; }
     }
     const sesion = {
       staffId: person.id, name: person.name, area: person.area,
@@ -988,7 +1023,12 @@
   };
   const ROLE_LABELS = {guardia:'Guardia', administrativo:'Administrativo', admin:'Super usuario'};
 
-  function render(){
+  function render(force){
+    if(!force && state.modalNovedad){
+      const ae = document.activeElement;
+      if(ae && ae.closest && ae.closest('.modal-overlay')){ state.renderPendiente = true; return; }
+    }
+    state.renderPendiente = false;
     if(!state.session){ renderLockScreen(); return; }
     const allowed = TABS_BY_ROLE[state.session.role] || [];
     if(!allowed.includes(state.tab)){ state.tab = allowed[0]; }
@@ -1012,6 +1052,8 @@
     app.appendChild(main);
     const modal = renderTelefonoModal();
     if(modal) app.appendChild(modal);
+    const modalNov = renderModalNovedad();
+    if(modalNov) app.appendChild(modalNov);
   }
 
   function renderHeader(){
@@ -2022,18 +2064,28 @@
     const inSal = document.createElement('input'); inSal.type = 'time'; inSal.value = state.nominaBase.salidaNormal; inSal.style.marginBottom = '12px';
     const lblExt = document.createElement('label'); lblExt.className = 'field-label'; lblExt.textContent = 'Las horas extra empiezan a las';
     const inExt = document.createElement('input'); inExt.type = 'time'; inExt.value = state.nominaBase.extraDesde; inExt.style.marginBottom = '12px';
+    const lblEnt = document.createElement('label'); lblEnt.className = 'field-label'; lblEnt.textContent = 'Hora de entrada normal (opcional, para controlar atrasos)';
+    const inEnt = document.createElement('input'); inEnt.type = 'time'; inEnt.value = state.nominaBase.entradaNormal || ''; inEnt.style.marginBottom = '12px';
+    const lblTol = document.createElement('label'); lblTol.className = 'field-label'; lblTol.textContent = 'Tolerancia de atraso (minutos)';
+    const inTol = document.createElement('input'); inTol.type = 'number'; inTol.min = '0'; inTol.max = '120'; inTol.value = String(state.nominaBase.tolerancia != null ? state.nominaBase.tolerancia : 10); inTol.style.marginBottom = '12px';
     const btnBase = document.createElement('button');
     btnBase.className = 'action secundario';
     btnBase.textContent = 'Guardar horario base';
     btnBase.onclick = async ()=>{
-      const a = inSal.value, b = inExt.value;
+      const a = inSal.value, b = inExt.value, e = inEnt.value, t = Math.max(0, Math.round(Number(inTol.value) || 0));
       if(!/^\d\d:\d\d$/.test(a) || !/^\d\d:\d\d$/.test(b)){ showToast('Elige las dos horas.'); return; }
       if(b < a){ showToast('Las extras no pueden empezar antes de la salida normal.'); return; }
-      try{ await db.collection(COL.meta).doc('nomina').set({salidaNormal: a, extraDesde: b}); showToast('Horario guardado: sale '+horaBonita(a)+', extras desde '+horaBonita(b)); }
-      catch(e){ showToast('No se pudo guardar. Revisa tu internet.'); }
+      if(e && e >= a){ showToast('La entrada normal debe ser antes de la salida normal.'); return; }
+      try{
+        await db.collection(COL.meta).doc('nomina').set({salidaNormal: a, extraDesde: b, entradaNormal: e || '', tolerancia: t});
+        registrarAuditoria('config_nomina', 'Salida normal '+a+' · extras desde '+b+' · entrada normal '+(e || 'sin controlar')+' · tolerancia '+t+' min');
+        showToast('Horario guardado: sale '+horaBonita(a)+', extras desde '+horaBonita(b)+(e ? ', entrada '+horaBonita(e) : ''));
+      }catch(err){ showToast('No se pudo guardar. Revisa tu internet.'); }
     };
-    baseCard.appendChild(lblSal); baseCard.appendChild(inSal); baseCard.appendChild(lblExt); baseCard.appendChild(inExt); baseCard.appendChild(btnBase);
+    baseCard.appendChild(lblSal); baseCard.appendChild(inSal); baseCard.appendChild(lblExt); baseCard.appendChild(inExt);
+    baseCard.appendChild(lblEnt); baseCard.appendChild(inEnt); baseCard.appendChild(lblTol); baseCard.appendChild(inTol); baseCard.appendChild(btnBase);
     wrap.appendChild(baseCard);
+    wrap.appendChild(renderAuditoriaCard());
 
     const pinCard = document.createElement('div');
     pinCard.className = 'card';
@@ -2289,7 +2341,8 @@
   // Horario base: a qué hora termina la jornada normal y desde cuándo cuentan las horas extra.
   function nominaBase(){
     const b = state.nominaBase || {};
-    return {normalEnd: toMin(b.salidaNormal || '16:00'), extraFrom: toMin(b.extraDesde || '17:00')};
+    return {normalEnd: toMin(b.salidaNormal || '16:00'), extraFrom: toMin(b.extraDesde || '17:00'),
+      entradaNormal: b.entradaNormal ? toMin(b.entradaNormal) : -1, tolerancia: Number(b.tolerancia) || 0};
   }
 
   // Trae de una vez todos los días del rango (el ID del documento es la fecha).
@@ -2347,7 +2400,7 @@
         const sessions = byPerson[id].slice().sort((a,b)=>(a.entrada||'').localeCompare(b.entrada||''));
         if(!roster[id]) roster[id] = nuevo(id, sessions[0].name, sessions[0].area, false, true);
         const base = nominaBase();
-        let regularMins = 0, extraMins = 0, noc = 0, open = false;
+        let regularMins = 0, extraMins = 0, noc = 0, open = false, tarde = 0, entrada1 = '';
         sessions.forEach((s, idx)=>{
           const variosDias = s.salida && s.salidaFecha && s.salidaFecha !== date;
           const m = calcMinutos(s.entrada, s.salida);
@@ -2357,7 +2410,9 @@
           const x = cruzaMedianoche ? xRaw + 1440 : xRaw;
           noc += minutosNocturnos(s.entrada, s.salida);
           if(idx === 0 && e < base.normalEnd && !cruzaMedianoche){
-            // turno de día: jornada normal + horas extra completas
+            // turno de día: jornada normal + horas extra
+            entrada1 = s.entrada;
+            if(base.entradaNormal >= 0 && (e - base.entradaNormal) > base.tolerancia) tarde = e - base.entradaNormal;
             let reg = Math.min(x, base.normalEnd) - e;
             if(reg >= MIN_JORNADA_ALMUERZO) reg -= MIN_ALMUERZO;
             regularMins += Math.min(reg, JORNADA_MAX);
@@ -2373,7 +2428,7 @@
         const hayTiempo = (regularMins > 0 || extraMins > 0 || !open);          // si no, presente con horas pendientes
         const dayMins = hayTiempo ? Math.round(regularMins/60) * 60 + extraMins : null;   // la jornada normal se redondea a la hora; los extras no
         const row = roster[id];
-        row.cells[date] = {mins:dayMins, extraMins:extraMins, open:open, noc:noc};
+        row.cells[date] = {mins:dayMins, extraMins:extraMins, open:open, noc:noc, tarde:tarde, entrada:entrada1};
         if(dayMins != null){ row.totalMins += dayMins; row.extraMins += extraMins; }
         row.noc += noc;
       });
@@ -2686,6 +2741,319 @@
     return wrap;
   }
 
+  // ---------- CONTROLES: novedades, autorización en la garita, cierre de mes y registro de cambios ----------
+
+  const NOV_TIPOS = [
+    {v:'J', l:'Falta justificada'},
+    {v:'P', l:'Permiso'},
+    {v:'V', l:'Vacaciones'},
+    {v:'L', l:'Día libre'},
+    {v:'A', l:'Autorizado a trabajar'}
+  ];
+  const NOV_ETIQUETA = {J:'Falta justificada', P:'Permiso', V:'Vacaciones', L:'Día libre', A:'Autorizado a trabajar'};
+  const ACCION_TXT = {
+    editar_registro:'Editó una marcación', eliminar_registro:'Eliminó una marcación', editar_visitante:'Editó un visitante', eliminar_visitante:'Eliminó un visitante',
+    novedad_guardada:'Registró una novedad', novedad_quitada:'Quitó una novedad', autorizacion_entrada:'Autorizó una entrada',
+    cierre_mes:'Cerró el mes', reabrir_mes:'Reabrió el mes', horario_cargado:'Cargó un horario', horario_eliminado:'Eliminó un horario', config_nomina:'Cambió el horario base de la nómina'
+  };
+
+  function novKey(staffId, fecha){ return staffId+'_'+fecha; }
+  function nombresAutorizadores(){
+    const s = new Set();
+    state.administrativos.forEach(a=>{ if(a.nombre) s.add(a.nombre); });
+    s.add('Gerencia');
+    return Array.from(s);
+  }
+
+  // ---- Ventana de formulario (el estado vive en state.modalNovedad para sobrevivir a los redibujos) ----
+  function abrirModalNovedad(cfg){
+    return new Promise(resolve=>{
+      state.modalNovedad = Object.assign({motivo:'', autoriza:'', error:'', foco:''}, cfg, {resolve:resolve});
+      if(!state.modalNovedad.tipo && cfg.tipos && cfg.tipos.length) state.modalNovedad.tipo = cfg.tipos[0].v;
+      render(true);
+    });
+  }
+  function cerrarModalNovedad(resultado){
+    const m = state.modalNovedad;
+    state.modalNovedad = null;
+    render(true);
+    if(m && m.resolve) m.resolve(resultado);
+  }
+  function renderModalNovedad(){
+    const m = state.modalNovedad;
+    if(!m) return null;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const card = document.createElement('div');
+    card.className = 'modal-card form';
+    card.innerHTML = (m.avatarNombre ? avatarHtml(m.avatarNombre) : '')+'<h2>'+escapeHtml(m.titulo || '')+'</h2>'+(m.subtitulo ? '<p>'+escapeHtml(m.subtitulo)+'</p>' : '');
+    const form = document.createElement('div');
+    form.className = 'mform';
+    let inpMotivo = null, inpAut = null;
+
+    if(m.tipos && m.tipos.length){
+      const l = document.createElement('label'); l.className = 'field-label'; l.textContent = 'Tipo';
+      const sel = document.createElement('select');
+      m.tipos.forEach(t=>{ const o = document.createElement('option'); o.value = t.v; o.textContent = t.l; sel.appendChild(o); });
+      sel.value = m.tipo;
+      sel.onchange = ()=>{ m.tipo = sel.value; };
+      form.appendChild(l); form.appendChild(sel);
+    }
+    const l1 = document.createElement('label'); l1.className = 'field-label'; l1.textContent = m.motivoLabel || 'Motivo';
+    inpMotivo = document.createElement('input'); inpMotivo.type = 'text'; inpMotivo.maxLength = 160; inpMotivo.placeholder = m.motivoPlaceholder || 'Ej. cita médica, calamidad doméstica…';
+    inpMotivo.value = m.motivo;
+    inpMotivo.oninput = ()=>{ m.motivo = inpMotivo.value; };
+    inpMotivo.onfocus = ()=>{ m.foco = 'motivo'; };
+    form.appendChild(l1); form.appendChild(inpMotivo);
+
+    const l2 = document.createElement('label'); l2.className = 'field-label'; l2.textContent = m.autorizaLabel || 'Autorizado por';
+    inpAut = document.createElement('input'); inpAut.type = 'text'; inpAut.maxLength = 80; inpAut.placeholder = 'Nombre de quien autoriza';
+    inpAut.setAttribute('list','dl-autoriza'); inpAut.setAttribute('autocomplete','off');
+    inpAut.value = m.autoriza;
+    inpAut.oninput = ()=>{ m.autoriza = inpAut.value; };
+    inpAut.onfocus = ()=>{ m.foco = 'autoriza'; };
+    const dl = document.createElement('datalist'); dl.id = 'dl-autoriza';
+    (m.sugerencias || []).forEach(n=>{ const o = document.createElement('option'); o.value = n; dl.appendChild(o); });
+    form.appendChild(l2); form.appendChild(inpAut); form.appendChild(dl);
+
+    if(m.error){
+      const er = document.createElement('div'); er.className = 'merr'; er.textContent = m.error;
+      form.appendChild(er);
+    }
+    if(m.nota){
+      const nt = document.createElement('div'); nt.className = 'mnota'; nt.textContent = m.nota;
+      form.appendChild(nt);
+    }
+    const col = document.createElement('div'); col.className = 'stack'; col.style.marginTop = '14px';
+    const bg = document.createElement('button'); bg.className = 'action'; bg.textContent = m.textoGuardar || 'Guardar';
+    bg.onclick = ()=>{
+      const motivo = (m.motivo || '').trim(), autoriza = (m.autoriza || '').trim();
+      if(motivo.length < 3){ m.error = 'Escribe el motivo.'; m.foco = 'motivo'; render(true); return; }
+      if(autoriza.length < 2){ m.error = 'Escribe quién lo autoriza.'; m.foco = 'autoriza'; render(true); return; }
+      cerrarModalNovedad({accion:'guardar', tipo:m.tipo, motivo:motivo, autoriza:autoriza});
+    };
+    col.appendChild(bg);
+    if(m.permitirQuitar){
+      const bq = document.createElement('button'); bq.className = 'action peligro'; bq.textContent = 'Quitar esta novedad';
+      bq.onclick = ()=> cerrarModalNovedad({accion:'quitar'});
+      col.appendChild(bq);
+    }
+    const bc = document.createElement('button'); bc.className = 'action secundario'; bc.textContent = 'Cancelar';
+    bc.onclick = ()=> cerrarModalNovedad(null);
+    col.appendChild(bc);
+    form.appendChild(col);
+    card.appendChild(form);
+    overlay.appendChild(card);
+    if(m.foco){ setTimeout(()=>{ const t = (m.foco === 'autoriza') ? inpAut : inpMotivo; if(t){ t.focus({preventScroll:true}); try{ t.setSelectionRange(t.value.length, t.value.length); }catch(e){} } }, 0); }
+    return overlay;
+  }
+
+  // ---- Registro de cambios (auditoría) ----
+  function registrarAuditoria(accion, detalle, fecha, extra){
+    try{
+      db.collection(COL.auditoria).add(Object.assign({
+        en: new Date().toISOString(), por: actorName(), rol: (state.session && state.session.role) || '',
+        accion: accion, detalle: String(detalle || ''), fecha: fecha || todayStr()
+      }, extra || {}));
+      state.auditoriaLista = null;
+    }catch(e){ /* el registro de cambios nunca debe bloquear la operación */ }
+  }
+  async function consultarAuditoriaRango(from, to){
+    try{
+      const snap = await db.collection(COL.auditoria).where('fecha','>=',from).where('fecha','<=',to).get();
+      return snap.docs.map(d=> d.data()).sort((a,b)=> (a.en || '').localeCompare(b.en || ''));
+    }catch(e){ return []; }
+  }
+  async function loadAuditoria(){
+    if(state.auditoriaLista !== null || state.auditoriaCargando) return;
+    state.auditoriaCargando = true;
+    try{
+      const snap = await db.collection(COL.auditoria).orderBy('en','desc').limit(150).get();
+      state.auditoriaLista = snap.docs.map(d=> d.data());
+    }catch(e){ state.auditoriaLista = []; }
+    state.auditoriaCargando = false;
+    render();
+  }
+  function fechaHoraCorta(iso){
+    const d = new Date(iso);
+    if(isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('es-EC',{day:'2-digit', month:'2-digit', year:'numeric'})+' '+d.toLocaleTimeString('es-EC',{hour:'2-digit', minute:'2-digit'});
+  }
+  function renderAuditoriaCard(){
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<h2 class="section-title">Registro de cambios</h2>'+
+      '<p style="margin:0 0 12px;font-size:12.5px;color:var(--texto-suave);line-height:1.5;">Queda guardado quién hizo cada cambio importante y cuándo: marcaciones editadas o eliminadas, novedades, autorizaciones de entrada, cierres de mes y horarios cargados. Nada de esto se puede borrar desde la app.</p>';
+    if(state.auditoriaLista === null) setTimeout(loadAuditoria, 0);
+    const lista = state.auditoriaLista;
+    const barra = document.createElement('div');
+    barra.className = 'row wrap'; barra.style.marginBottom = '10px';
+    const bAct = document.createElement('button'); bAct.className = 'action secundario'; bAct.innerHTML = icon('refresh',16)+'Actualizar';
+    bAct.onclick = ()=>{ state.auditoriaLista = null; render(); };
+    barra.appendChild(bAct);
+    if(lista && lista.length){
+      const bCsv = document.createElement('button'); bCsv.className = 'action secundario'; bCsv.innerHTML = icon('download',16)+'Descargar CSV';
+      bCsv.onclick = ()=>{
+        let csv = ['Fecha y hora','Quién','Rol','Acción','Detalle','Fecha afectada'].map(csvEscape).join(',')+'\n';
+        lista.forEach(x=>{ csv += [fechaHoraCorta(x.en), x.por, x.rol, ACCION_TXT[x.accion] || x.accion, x.detalle, x.fecha].map(csvEscape).join(',')+'\n'; });
+        downloadFile('registro_de_cambios_'+todayStr()+'.csv', '\ufeff'+csv, 'text/csv;charset=utf-8');
+      };
+      barra.appendChild(bCsv);
+    }
+    card.appendChild(barra);
+    if(lista === null){
+      const c = document.createElement('div'); c.className = 'empty'; c.innerHTML = '<div class="spinner"></div>Cargando…'; card.appendChild(c);
+    } else if(!lista.length){
+      const c = document.createElement('p'); c.style.cssText = 'margin:0;font-size:13px;color:var(--texto-suave);font-weight:600;'; c.textContent = 'Todavía no hay cambios registrados.'; card.appendChild(c);
+    } else {
+      lista.slice(0, 60).forEach(x=>{
+        const row = document.createElement('div');
+        row.className = 'staff-row'; row.style.flexDirection = 'column'; row.style.alignItems = 'flex-start'; row.style.gap = '2px';
+        row.innerHTML = '<div style="font-weight:800;font-size:13.5px;">'+escapeHtml(ACCION_TXT[x.accion] || x.accion)+'</div>'+
+          '<div style="font-size:12.5px;line-height:1.4;">'+escapeHtml(x.detalle || '')+'</div>'+
+          '<div class="meta">'+escapeHtml(fechaHoraCorta(x.en))+' · '+escapeHtml(x.por || '')+'</div>';
+        card.appendChild(row);
+      });
+      if(lista.length > 60){
+        const mas = document.createElement('div'); mas.className = 'meta'; mas.style.marginTop = '8px'; mas.textContent = 'Se muestran los últimos 60. El CSV trae todos los cargados ('+lista.length+').'; card.appendChild(mas);
+      }
+    }
+    return card;
+  }
+
+  // ---- Novedades por persona y día ----
+  async function cargarNovedadesRango(from, to){
+    const key = from+'_'+to;
+    if(state.novedadesCache[key] || state.novedadesLoading[key]) return;
+    state.novedadesLoading[key] = true;
+    try{
+      const snap = await db.collection(COL.novedades).where('fecha','>=',from).where('fecha','<=',to).get();
+      const map = {};
+      snap.docs.forEach(d=>{ const x = d.data(); map[novKey(x.staffId, x.fecha)] = x; });
+      state.novedadesCache[key] = {map:map};
+      delete state.novedadesFailed[key];
+    }catch(e){
+      state.novedadesFailed[key] = true;
+      showToast('No se pudieron cargar las novedades. Revisa tu internet.');
+    }
+    delete state.novedadesLoading[key];
+    render();
+  }
+  function actualizarCachesNovedad(id, doc, fecha){
+    Object.keys(state.novedadesCache).forEach(k=>{
+      const p = k.split('_');
+      if(fecha >= p[0] && fecha <= p[1]){ if(doc) state.novedadesCache[k].map[id] = doc; else delete state.novedadesCache[k].map[id]; }
+    });
+  }
+  async function guardarNovedad(n, esAutorizacionEntrada){
+    const id = novKey(n.staffId, n.fecha);
+    const previo = Object.keys(state.novedadesCache).map(k=> state.novedadesCache[k].map[id]).find(x=> x) || null;
+    const doc = {staffId:n.staffId, nombre:n.nombre, fecha:n.fecha, codigo:n.codigo, motivo:n.motivo, autoriza:n.autoriza, por:actorName(), en:new Date().toISOString()};
+    await db.collection(COL.novedades).doc(id).set(doc);
+    actualizarCachesNovedad(id, doc, n.fecha);
+    if(n.fecha === todayStr()) state.novedadHoy[n.staffId] = doc;
+    registrarAuditoria(esAutorizacionEntrada ? 'autorizacion_entrada' : 'novedad_guardada',
+      n.nombre+' · '+formatDateEs(n.fecha)+' · '+NOV_ETIQUETA[n.codigo]+' · Motivo: '+n.motivo+' · Autoriza: '+n.autoriza+(previo ? ' (reemplaza: '+NOV_ETIQUETA[previo.codigo]+')' : ''), n.fecha, {staffId:n.staffId});
+  }
+  async function quitarNovedad(staffId, nombre, fecha){
+    const id = novKey(staffId, fecha);
+    const previo = Object.keys(state.novedadesCache).map(k=> state.novedadesCache[k].map[id]).find(x=> x) || null;
+    await db.collection(COL.novedades).doc(id).delete();
+    actualizarCachesNovedad(id, null, fecha);
+    if(fecha === todayStr()) delete state.novedadHoy[staffId];
+    registrarAuditoria('novedad_quitada', nombre+' · '+formatDateEs(fecha)+(previo ? ' · ya no tiene: '+NOV_ETIQUETA[previo.codigo]+' ('+previo.motivo+')' : ''), fecha, {staffId:staffId});
+  }
+
+  // ---- Control en la garita: quien hoy está libre, de vacaciones o con permiso necesita autorización ----
+  let ctlHoy = {fecha:'', unsubN:null, unsubH:null};
+  function suscribirControlHoy(){
+    const hoy = todayStr(), ym = hoy.slice(0,7);
+    if(ctlHoy.fecha === hoy) return;
+    if(ctlHoy.unsubN) ctlHoy.unsubN();
+    if(ctlHoy.unsubH) ctlHoy.unsubH();
+    ctlHoy.fecha = hoy;
+    ctlHoy.unsubN = db.collection(COL.novedades).where('fecha','==',hoy).onSnapshot(snap=>{
+      const m = {}; snap.docs.forEach(d=>{ const x = d.data(); m[x.staffId] = x; });
+      state.novedadHoy = m;
+    }, ()=>{});
+    ctlHoy.unsubH = db.collection(COL.meta).doc('horario_'+ym).onSnapshot(snap=>{
+      state.horarioHoy = snap.exists ? snap.data() : null;
+    }, ()=>{});
+  }
+  setInterval(()=>{ if(state.session) suscribirControlHoy(); }, 60000);
+
+  // Qué le toca hoy a la persona según el cronograma y las novedades (null = sin cronograma cargado)
+  function progDeHoy(personId){
+    const doc = state.horarioHoy;
+    if(!doc || !doc.rows) return null;
+    const r = doc.rows.find(x=> x.staffId === personId);
+    if(!r) return null;
+    const hoy = todayStr();
+    const v = r.days ? r.days[hoy] : undefined;
+    if(v === undefined) return null;
+    let prog = tipoProg(v);
+    const nov = state.novedadHoy[personId];
+    if(nov){
+      if(nov.codigo === 'A') prog = 'T';
+      else if(nov.codigo === 'P' || nov.codigo === 'V' || nov.codigo === 'L') prog = nov.codigo;
+    }
+    return {prog:prog, nov:nov || null};
+  }
+  async function pedirAutorizacionEntrada(person, prog){
+    const que = {L:'libre', V:'de vacaciones', P:'con permiso'}[prog] || 'sin programación';
+    const res = await abrirModalNovedad({
+      titulo: person.name, avatarNombre: person.name,
+      subtitulo: 'Hoy le toca '+que+'. Para registrar su entrada escribe el motivo y quién lo autoriza.',
+      motivoLabel: 'Motivo (por qué viene hoy)', motivoPlaceholder: 'Ej. reemplazo, emergencia, cambio de turno…',
+      autorizaLabel: 'Autorizado por', sugerencias: nombresAutorizadores(),
+      textoGuardar: 'Autorizar y registrar entrada',
+      nota: 'Queda registrado quién lo autorizó. Si no tiene autorización, cancela y avisa a la jefatura.'
+    });
+    return (res && res.accion === 'guardar') ? res : null;
+  }
+
+  // ---- Cierre de mes ----
+  function canon(o){
+    if(o === null || typeof o !== 'object') return JSON.stringify(o);
+    if(Array.isArray(o)) return '['+o.map(canon).join(',')+']';
+    return '{'+Object.keys(o).sort().map(k=> JSON.stringify(k)+':'+canon(o[k])).join(',')+'}';
+  }
+  function hashModelo(modelo){
+    const s = canon(modelo);
+    let h = 0x811c9dc5;
+    for(let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h.toString(16).padStart(8,'0').toUpperCase();
+  }
+  function cierreIntegro(cierre){ return !!(cierre && cierre.modelo && hashModelo(cierre.modelo) === cierre.huella); }
+
+  async function cierreDe(ym){
+    if(state.cierreCache[ym] !== undefined) return state.cierreCache[ym];
+    try{
+      const snap = await db.collection(COL.meta).doc('cierre_'+ym).get();
+      state.cierreCache[ym] = snap.exists ? snap.data() : null;
+    }catch(e){ return null; }
+    return state.cierreCache[ym];
+  }
+  async function cerrarMes(ym, modelo){
+    const limpio = JSON.parse(JSON.stringify(modelo));
+    const doc = {cerradoPor: actorName(), en: new Date().toISOString(), huella: hashModelo(limpio), modelo: limpio};
+    await db.collection(COL.meta).doc('cierre_'+ym).set(doc);
+    state.cierreCache[ym] = doc;
+    registrarAuditoria('cierre_mes', nombreMes(ym)+' · '+limpio.filas.length+' personas · huella '+doc.huella, ym+'-01');
+    return doc;
+  }
+  async function reabrirMes(ym, motivo){
+    const previo = state.cierreCache[ym];
+    await db.collection(COL.meta).doc('cierre_'+ym).delete();
+    state.cierreCache[ym] = null;
+    registrarAuditoria('reabrir_mes', nombreMes(ym)+' · Motivo: '+motivo+(previo ? ' · cierre anterior: '+fechaHoraCorta(previo.en)+' por '+previo.cerradoPor+' (huella '+previo.huella+')' : ''), ym+'-01');
+  }
+  // devuelve el cierre del mes de esa fecha si existe (para bloquear ediciones)
+  async function mesCerradoFecha(fecha){ return await cierreDe(fecha.slice(0,7)); }
+  function avisoMesCerrado(cierre, fecha){
+    showToast(nombreMes(fecha.slice(0,7))+' está cerrado ('+fechaHoraCorta(cierre.en)+'). El super usuario debe reabrirlo para cambiar algo.');
+  }
+
   // ---------- HORARIO DE TRABAJO (carga desde Excel) y COMPARATIVA con la asistencia ----------
   // Códigos del cronograma: A = jornada (asistencia programada) · L = libre · V = vacaciones · P = permiso · F = falta · E = extra.
   // También se entiende el formato anterior (casillas con número = día de trabajo).
@@ -2956,6 +3324,7 @@
         });
       }
       showToast('Horario guardado: '+meses.map(nombreMes).join(', '));
+      registrarAuditoria('horario_cargado', meses.map(nombreMes).join(', ')+' · '+c.filas.filter(f=> f.staffId).length+' personas · archivo '+prev.archivo+' (hoja '+c.hoja+')', meses[0]+'-01');
       state.horarioPrevia = null; state.horarioCache = {}; state.horarioFailed = {}; state.horariosLista = null;
     }catch(e){
       showToast('No se pudo guardar el horario. Revisa tu internet.');
@@ -3009,7 +3378,7 @@
         del.className = 'del'; del.textContent = 'Eliminar';
         del.onclick = async ()=>{
           if(!window.confirm('¿Eliminar el horario de '+nombreMes(h.ym)+'?')) return;
-          try{ await db.collection(COL.meta).doc('horario_'+h.ym).delete(); showToast('Horario eliminado.'); }
+          try{ await db.collection(COL.meta).doc('horario_'+h.ym).delete(); showToast('Horario eliminado.'); registrarAuditoria('horario_eliminado', nombreMes(h.ym), h.ym+'-01'); }
           catch(e){ showToast('No se pudo eliminar. Revisa tu internet.'); }
           state.horariosLista = null; state.horarioCache = {}; render();
         };
@@ -3138,16 +3507,62 @@
     if(t === 'P') return 'P';
     return t ? 'O' : '';
   }
+  const NOM_EST = {ok:'Asistió', falta:'Falta', justif:'Falta justificada', hoy:'Hoy: aún no registra entrada', prog:'Le toca trabajar', libre:'Día libre', vac:'Vacaciones', perm:'Permiso',
+    extra:'Asistió sin que le tocara', sinh:'Asistió (sin horario cargado ese día)', otro:'Otro', nada:'Sin horario'};
+
+  function codigoDeEst(f, d){
+    const e = f.est[d];
+    if(e === 'ok' || e === 'sinh') return 'A';
+    if(e === 'falta') return 'F';
+    if(e === 'justif') return 'J';
+    if(e === 'libre') return 'L';
+    if(e === 'vac') return 'V';
+    if(e === 'perm') return 'P';
+    if(e === 'extra') return 'E';
+    if(e === 'otro') return String(f.days[d]).slice(0,2);
+    return '';
+  }
+
+  // Abre la ventana para justificar una falta, registrar un permiso o vacaciones, o autorizar a trabajar un día no programado.
+  async function editarNovedadDia(f, d, nov){
+    const cierre = await mesCerradoFecha(d);
+    if(cierre){ avisoMesCerrado(cierre, d); return; }
+    const est = f.est[d];
+    const porDefecto = nov ? nov.codigo : ({falta:'J', hoy:'J', prog:'P', ok:'A', extra:'A', libre:'A', vac:'A', perm:'A', nada:'P', otro:'P', sinh:'A', justif:'J'}[est] || 'J');
+    const res = await abrirModalNovedad({
+      titulo: f.nombre, avatarNombre: f.nombre,
+      subtitulo: formatDateEs(d)+' · '+(NOM_EST[est] || ''),
+      tipos: NOV_TIPOS, tipo: porDefecto, motivo: nov ? nov.motivo : '', autoriza: nov ? nov.autoriza : '',
+      motivoLabel: 'Motivo', autorizaLabel: 'Autorizado por', sugerencias: nombresAutorizadores(), permitirQuitar: !!nov,
+      textoGuardar: nov ? 'Guardar cambios' : 'Guardar novedad',
+      nota: nov ? ('Registrada por '+nov.por+' el '+fechaHoraCorta(nov.en)+'.') : 'Queda registrado quién la hizo y cuándo.'
+    });
+    if(!res) return;
+    try{
+      if(res.accion === 'quitar'){ await quitarNovedad(f.staffId, f.nombre, d); showToast('Novedad quitada.'); }
+      else { await guardarNovedad({staffId:f.staffId, nombre:f.nombre, fecha:d, codigo:res.tipo, motivo:res.motivo, autoriza:res.autoriza}); showToast('Novedad guardada.'); }
+    }catch(e){ showToast('No se pudo guardar. Revisa tu internet.'); }
+    render();
+  }
 
   function renderComparativa(wrap, c){
     const start = c.start, end = c.end, dates = c.dates, today = c.today, mode = c.mode;
     const meses = Array.from(new Set([start.slice(0,7), end.slice(0,7)]));
+    const kNov = start+'_'+end;
+    const ymCierre = (mode === 'mes') ? start.slice(0,7) : null;
     let fallo = false, cargando = false;
     meses.forEach(ym=>{
       if(state.horarioCache[ym] !== undefined) return;
       if(state.horarioFailed[ym]) fallo = true;
       else { cargando = true; setTimeout(()=> loadHorarioMes(ym), 0); }
     });
+    if(!state.novedadesCache[kNov]){
+      if(state.novedadesFailed[kNov]) fallo = true;
+      else { cargando = true; setTimeout(()=> cargarNovedadesRango(start, end), 0); }
+    }
+    if(ymCierre && state.cierreCache[ymCierre] === undefined){
+      cargando = true; setTimeout(()=>{ cierreDe(ymCierre).then(()=> render()); }, 0);
+    }
     if(fallo || cargando){
       const st = document.createElement('div');
       st.className = 'card empty';
@@ -3155,7 +3570,7 @@
         st.innerHTML = '<div class="ic-big">'+icon('refresh',24)+'</div>No se pudo cargar el horario.';
         const retry = document.createElement('button');
         retry.className = 'action secundario'; retry.style.marginTop = '14px'; retry.textContent = 'Reintentar';
-        retry.onclick = ()=>{ state.horarioFailed = {}; render(); };
+        retry.onclick = ()=>{ state.horarioFailed = {}; state.novedadesFailed = {}; render(); };
         st.appendChild(retry);
       } else st.innerHTML = '<div class="spinner"></div>Cargando el horario…';
       wrap.appendChild(st);
@@ -3183,33 +3598,47 @@
       return;
     }
 
+    const nmap = state.novedadesCache[kNov].map;
+    const cierre = ymCierre ? state.cierreCache[ymCierre] : null;
+    const nb = state.nominaBase || {};
+    const pun = nb.entradaNormal ? {entrada: nb.entradaNormal, tolerancia: Number(nb.tolerancia) || 0} : null;
     const asist = {};
     c.allRows.forEach(r=>{ asist[r.id] = r.cells; });
     filas.forEach(f=>{
       const p = state.staff.find(x=> x.id === f.staffId);
       f.nombre = p ? p.name : f.name;
       f.area = p ? p.area : 'Sin área';
-      f.est = {}; f.hubo = {}; f.prog = {};
-      f.ok = 0; f.falt = 0; f.extra = 0; f.progTotal = 0; f.libres = 0; f.vac = 0; f.perm = 0;
+      f.est = {}; f.hubo = {}; f.prog = {}; f.nov = {}; f.tarde = {};
+      f.ok = 0; f.falt = 0; f.just = 0; f.extra = 0; f.aut = 0; f.progTotal = 0; f.libres = 0; f.vac = 0; f.perm = 0; f.atrasos = 0; f.minAtraso = 0;
       dates.forEach(d=>{
-        const v = f.days[d];
-        const prog = tipoProg(v);
-        const hubo = !!(asist[f.staffId] && asist[f.staffId][d]);
+        let prog = tipoProg(f.days[d]);
+        const nov = nmap[f.staffId+'_'+d] || null;
+        let justif = false, aut = false;
+        if(nov){
+          if(nov.codigo === 'A'){ prog = 'T'; aut = true; }
+          else if(nov.codigo === 'J'){ justif = true; }
+          else prog = nov.codigo;               // P, V o L registrados en la app
+        }
+        const cel = asist[f.staffId] && asist[f.staffId][d];
+        const hubo = !!cel;
         let e;
-        if(prog === 'T') e = hubo ? 'ok' : (d < today ? 'falta' : (d === today ? 'hoy' : 'prog'));
+        if(prog === 'T') e = hubo ? 'ok' : (justif ? 'justif' : (d < today ? 'falta' : (d === today ? 'hoy' : 'prog')));
         else if(hubo) e = (prog === '') ? 'sinh' : 'extra';
         else e = (prog === 'L') ? 'libre' : (prog === 'V' ? 'vac' : (prog === 'P' ? 'perm' : (prog === 'O' ? 'otro' : 'nada')));
-        f.est[d] = e; f.hubo[d] = hubo; f.prog[d] = prog;
+        f.est[d] = e; f.hubo[d] = hubo; f.prog[d] = prog; f.nov[d] = nov;
         if(prog === 'T') f.progTotal++;
         if(prog === 'L') f.libres++;
         if(prog === 'V') f.vac++;
         if(prog === 'P') f.perm++;
-        if(e === 'ok') f.ok++;
+        if(e === 'ok'){ f.ok++; if(aut) f.aut++; }
         if(e === 'falta') f.falt++;
+        if(e === 'justif') f.just++;
         if(e === 'extra') f.extra++;
+        if(pun && e === 'ok' && cel && cel.tarde > 0){ f.tarde[d] = cel.tarde; f.atrasos++; f.minAtraso += cel.tarde; }
       });
     });
     const todas = filas.slice().sort((a,b)=> a.orden - b.orden);
+    const porId = {}; todas.forEach(f=>{ porId[f.staffId] = f; });
     if(state.nominaArea !== 'todas') filas = filas.filter(f=> f.area === state.nominaArea);
     filas.sort((a,b)=> a.area.localeCompare(b.area,'es') || a.orden - b.orden);
 
@@ -3221,16 +3650,72 @@
       return;
     }
 
-    const tOk = filas.reduce((s,f)=> s + f.ok, 0), tFalt = filas.reduce((s,f)=> s + f.falt, 0), tExtra = filas.reduce((s,f)=> s + f.extra, 0);
+    const suma = (k)=> filas.reduce((s,f)=> s + f[k], 0);
+    const tOk = suma('ok'), tFalt = suma('falt'), tJust = suma('just'), tExtra = suma('extra'), tAtr = suma('atrasos'), tMinAtr = suma('minAtraso');
     const cumpl = (tOk + tFalt) ? Math.round(tOk * 100 / (tOk + tFalt)) : null;
+    const idsMostrados = new Set(filas.map(f=> f.staffId));
+    const tNov = Object.keys(nmap).filter(k=> idsMostrados.has(nmap[k].staffId)).length;
+
+    // ---- cierre del mes ----
+    if(mode === 'mes'){
+      const cb = document.createElement('div');
+      cb.className = 'card cierre-banner'+(cierre ? ' cerrado' : '');
+      const esAdmin = state.session.role === 'admin';
+      if(cierre){
+        const integro = cierreIntegro(cierre);
+        cb.innerHTML = '<div class="cb-head"><div class="cb-ic">'+icon('lock',20)+'</div><div><div class="cb-t">Mes cerrado</div>'+
+          '<div class="cb-s">Cerrado por '+escapeHtml(cierre.cerradoPor || '')+' el '+escapeHtml(fechaHoraCorta(cierre.en))+'. Huella '+escapeHtml(cierre.huella || '')+
+          (integro ? ' · <b>íntegra</b>' : ' · <b style="color:var(--danger);">ALTERADA: no coincide con el cierre</b>')+
+          '. No se pueden editar marcaciones ni novedades de este mes.</div></div></div>';
+        if(esAdmin){
+          const br = document.createElement('button');
+          br.className = 'action secundario'; br.style.marginTop = '10px'; br.textContent = 'Reabrir mes';
+          br.onclick = async ()=>{
+            const motivo = window.prompt('Motivo para reabrir '+nombreMes(ymCierre)+':');
+            if(!motivo || motivo.trim().length < 3){ showToast('Reapertura cancelada: escribe el motivo.'); return; }
+            try{ await reabrirMes(ymCierre, motivo.trim()); showToast('Mes reabierto.'); }catch(e){ showToast('No se pudo reabrir. Revisa tu internet.'); }
+            render();
+          };
+          cb.appendChild(br);
+        }
+        wrap.appendChild(cb);
+      } else if(esAdmin){
+        const terminado = end < today;
+        cb.innerHTML = '<div class="cb-head"><div class="cb-ic">'+icon('lock',20)+'</div><div><div class="cb-t">Cierre de mes</div>'+
+          '<div class="cb-s">'+(terminado
+            ? 'Al cerrar, el resumen de '+escapeHtml(nombreMes(ymCierre))+' queda guardado con su huella y ya no se pueden cambiar las marcaciones ni las novedades de ese mes. Revisa antes las faltas y las entradas sin salida.'
+            : 'Podrás cerrar el mes cuando termine (después del '+escapeHtml(formatDateEs(end))+').')+'</div></div></div>';
+        if(terminado){
+          const bc = document.createElement('button');
+          bc.className = 'action'; bc.style.marginTop = '10px'; bc.innerHTML = icon('lock',18)+'Cerrar '+escapeHtml(nombreMes(ymCierre));
+          bc.onclick = async ()=>{
+            if(!window.confirm('¿Cerrar '+nombreMes(ymCierre)+'?\n\nPersonas: '+todas.length+'\nCumplidos: '+todas.reduce((s,f)=>s+f.ok,0)+' · Faltas: '+todas.reduce((s,f)=>s+f.falt,0)+' · Justificadas: '+todas.reduce((s,f)=>s+f.just,0)+
+              '\n\nDespués no se podrán editar marcaciones ni novedades de ese mes sin reabrirlo.')) return;
+            bc.disabled = true; bc.textContent = 'Cerrando…';
+            try{
+              const cambios = await consultarAuditoriaRango(start, end);
+              const modelo = construirModelo({start:start, end:end, dates:dates, today:today, filas:todas, allRows:c.allRows, days:c.days, linea:linea, nmap:nmap, pun:pun, cambios:cambios});
+              await cerrarMes(ymCierre, modelo);
+              showToast(nombreMes(ymCierre)+' cerrado.');
+            }catch(e){ showToast('No se pudo cerrar el mes. Revisa tu internet.'); }
+            render();
+          };
+          cb.appendChild(bc);
+        }
+        wrap.appendChild(cb);
+      }
+    }
 
     const stats = document.createElement('div');
     stats.className = 'nm-stats';
     stats.innerHTML =
       '<div class="nm-stat hl"><div class="num">'+(cumpl == null ? '–' : cumpl+'<small>%</small>')+'</div><div class="lbl">Cumplimiento del horario</div></div>'+
-      '<div class="nm-stat"><div class="num" style="color:'+(tFalt ? 'var(--danger)' : 'inherit')+'">'+tFalt+'</div><div class="lbl">Faltas (les tocaba y no vinieron)</div></div>'+
+      '<div class="nm-stat"><div class="num" style="color:'+(tFalt ? 'var(--danger)' : 'inherit')+'">'+tFalt+'</div><div class="lbl">Faltas sin justificar</div></div>'+
+      '<div class="nm-stat"><div class="num">'+tJust+'</div><div class="lbl">Faltas justificadas</div></div>'+
       '<div class="nm-stat"><div class="num">'+tOk+'</div><div class="lbl">Días cumplidos</div></div>'+
-      '<div class="nm-stat"><div class="num">'+tExtra+'</div><div class="lbl">Asistió sin que le tocara</div></div>';
+      '<div class="nm-stat"><div class="num">'+tExtra+'</div><div class="lbl">Asistió sin que le tocara</div></div>'+
+      (pun ? '<div class="nm-stat"><div class="num">'+tAtr+'</div><div class="lbl">Atrasos'+(tMinAtr ? ' ('+tMinAtr+' min)' : '')+'</div></div>'
+           : '<div class="nm-stat"><div class="num">'+tNov+'</div><div class="lbl">Novedades registradas</div></div>');
     wrap.appendChild(stats);
 
     const legend = document.createElement('div');
@@ -3239,31 +3724,36 @@
     legend.innerHTML =
       '<span><i style="background:var(--brand)"></i>Asistió</span>'+
       '<span><i style="background:#C9503E"></i>Falta</span>'+
+      '<span><i style="background:#F6B26B"></i>Falta justificada</span>'+
       '<span><i style="background:#F2C66B"></i>Asistió sin que le tocara</span>'+
       '<span><i style="background:#EAF3EC;border:1px solid #BFD8C8"></i>Le toca</span>'+
       '<span><i style="background:#F0EEE6;border:1px solid var(--line)"></i>Libre</span>'+
       '<span><i style="background:#DD7E6B"></i>Vacaciones</span>'+
-      '<span><i style="background:#3F6FA0"></i>Permiso</span>';
+      '<span><i style="background:#3F6FA0"></i>Permiso</span>'+
+      '<span><i style="background:#fff;border:2px solid #3B3B3B"></i>Con novedad registrada</span>'+
+      (pun ? '<span><i style="background:#F28C28;border-radius:50%"></i>Llegó tarde</span>' : '');
     wrap.appendChild(legend);
 
-    const nomEst = {ok:'Asistió', falta:'Falta', hoy:'Hoy: aún no registra entrada', prog:'Le toca trabajar', libre:'Día libre', vac:'Vacaciones', perm:'Permiso',
-      extra:'Asistió sin que le tocara', sinh:'Asistió (sin horario cargado ese día)', otro:'Otro', nada:'Sin horario'};
     function celda(f, d){
-      const e = f.est[d];
-      let t = nomEst[e];
+      const e = f.est[d], nov = f.nov[d], tarde = f.tarde[d];
+      let t = NOM_EST[e];
       if(e === 'extra') t = {L:'Asistió en su día libre', V:'Asistió estando de vacaciones', P:'Asistió con permiso'}[f.prog[d]] || 'Asistió en un día no programado';
-      const tip = ' title="'+escapeHtml(formatDateEs(d)+': '+t)+'"';
-      if(e === 'ok') return '<td class="c k k-ok"'+tip+'>'+icon('check',16)+'</td>';
-      if(e === 'falta') return '<td class="c k k-falta"'+tip+'>'+icon('x',16)+'</td>';
-      if(e === 'extra') return '<td class="c k k-extra"'+tip+'>'+icon('plus',16)+'</td>';
-      if(e === 'sinh') return '<td class="c k k-sinh"'+tip+'>'+icon('check',16)+'</td>';
-      if(e === 'hoy') return '<td class="c k k-hoy"'+tip+'>…</td>';
-      if(e === 'prog') return '<td class="c k k-prog"'+tip+'>•</td>';
-      if(e === 'libre') return '<td class="c k k-libre"'+tip+'>L</td>';
-      if(e === 'vac') return '<td class="c k k-vac"'+tip+'>V</td>';
-      if(e === 'perm') return '<td class="c k k-perm"'+tip+'>P</td>';
-      if(e === 'otro') return '<td class="c k k-otro"'+tip+'>'+escapeHtml(String(f.days[d]))+'</td>';
-      return '<td class="c k"></td>';
+      if(nov) t += ' · '+NOV_ETIQUETA[nov.codigo]+': '+nov.motivo+' (autoriza: '+nov.autoriza+')';
+      if(tarde) t += ' · Llegó tarde: '+tarde+' min';
+      const attrs = ' title="'+escapeHtml(formatDateEs(d)+': '+t)+'" data-f="'+escapeHtml(f.staffId)+'" data-d="'+d+'"';
+      const extraCls = (nov ? ' k-nov' : '')+(tarde ? ' k-tarde' : '');
+      if(e === 'ok') return '<td class="c k k-ok'+extraCls+'"'+attrs+'>'+icon('check',16)+'</td>';
+      if(e === 'falta') return '<td class="c k k-falta'+extraCls+'"'+attrs+'>'+icon('x',16)+'</td>';
+      if(e === 'justif') return '<td class="c k k-just'+extraCls+'"'+attrs+'>J</td>';
+      if(e === 'extra') return '<td class="c k k-extra'+extraCls+'"'+attrs+'>'+icon('plus',16)+'</td>';
+      if(e === 'sinh') return '<td class="c k k-sinh'+extraCls+'"'+attrs+'>'+icon('check',16)+'</td>';
+      if(e === 'hoy') return '<td class="c k k-hoy'+extraCls+'"'+attrs+'>…</td>';
+      if(e === 'prog') return '<td class="c k k-prog'+extraCls+'"'+attrs+'>•</td>';
+      if(e === 'libre') return '<td class="c k k-libre'+extraCls+'"'+attrs+'>L</td>';
+      if(e === 'vac') return '<td class="c k k-vac'+extraCls+'"'+attrs+'>V</td>';
+      if(e === 'perm') return '<td class="c k k-perm'+extraCls+'"'+attrs+'>P</td>';
+      if(e === 'otro') return '<td class="c k k-otro'+extraCls+'"'+attrs+'>'+escapeHtml(String(f.days[d]))+'</td>';
+      return '<td class="c k'+extraCls+'"'+attrs+'></td>';
     }
     const headCols = dates.map(d=>{
       const dt = parseDate(d), i = (dt.getDay() + 6) % 7, wk = (i >= 5) ? ' wk' : '';
@@ -3275,13 +3765,14 @@
     const byArea = {};
     filas.forEach(f=>{ (byArea[f.area] = byArea[f.area] || []).push(f); });
     const areaOrder = Object.keys(byArea).sort((a,b)=> a.localeCompare(b,'es'));
+    const nSum = pun ? 3 : 2;
     let body = '';
     areaOrder.forEach(area=>{
-      body += '<tr class="nm-area"><td class="nm-name">'+escapeHtml(area)+'</td><td colspan="'+(dates.length + 2)+'">'+byArea[area].filter(f=>f.falt).length+' con faltas</td></tr>';
+      body += '<tr class="nm-area"><td class="nm-name">'+escapeHtml(area)+'</td><td colspan="'+(dates.length + nSum)+'">'+byArea[area].filter(f=>f.falt).length+' con faltas</td></tr>';
       byArea[area].forEach(f=>{
         body += '<tr><td class="nm-name">'+escapeHtml(f.nombre)+(f.cargo ? '<small class="cg">'+escapeHtml(f.cargo)+'</small>' : '')+'</td>'+
           dates.map(d=> celda(f, d)).join('')+
-          '<td class="nm-sum">'+f.ok+'</td><td class="nm-sum'+(f.falt ? ' bad' : '')+'">'+f.falt+'</td></tr>';
+          '<td class="nm-sum">'+f.ok+'</td><td class="nm-sum'+(f.falt ? ' bad' : '')+'">'+f.falt+'</td>'+(pun ? '<td class="nm-sum'+(f.atrasos ? ' bad' : '')+'">'+f.atrasos+'</td>' : '')+'</tr>';
       });
     });
     const progDia = {}, asisDia = {};
@@ -3290,20 +3781,32 @@
       asisDia[d] = filas.filter(f=> f.hubo[d]).length;
     });
     const foot =
-      '<tr><td class="nm-name">Programados</td>'+dates.map(d=>'<td class="c">'+progDia[d]+'</td>').join('')+'<td class="nm-sum"></td><td class="nm-sum"></td></tr>'+
-      '<tr><td class="nm-name">Asistieron</td>'+dates.map(d=>'<td class="c">'+(d > today ? '' : asisDia[d])+'</td>').join('')+'<td class="nm-sum">'+tOk+'</td><td class="nm-sum">'+tFalt+'</td></tr>';
+      '<tr><td class="nm-name">Programados</td>'+dates.map(d=>'<td class="c">'+progDia[d]+'</td>').join('')+'<td class="nm-sum"></td><td class="nm-sum"></td>'+(pun ? '<td class="nm-sum"></td>' : '')+'</tr>'+
+      '<tr><td class="nm-name">Asistieron</td>'+dates.map(d=>'<td class="c">'+(d > today ? '' : asisDia[d])+'</td>').join('')+'<td class="nm-sum">'+tOk+'</td><td class="nm-sum">'+tFalt+'</td>'+(pun ? '<td class="nm-sum">'+tAtr+'</td>' : '')+'</tr>';
 
     const tableCard = document.createElement('div');
     tableCard.className = 'card nm-card';
     tableCard.innerHTML =
       '<div class="nm-grid-wrap"><table class="nm-grid '+(mode === 'semana' ? 'sem' : 'mes')+'">'+
-      '<thead><tr><th class="nm-name">Nombres</th>'+headCols+'<th class="nm-sum">Asist.</th><th class="nm-sum">Faltas</th></tr></thead>'+
+      '<thead><tr><th class="nm-name">Nombres</th>'+headCols+'<th class="nm-sum">Asist.</th><th class="nm-sum">Faltas</th>'+(pun ? '<th class="nm-sum">Atras.</th>' : '')+'</tr></thead>'+
       '<tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div>';
     wrap.appendChild(tableCard);
+    // tocar un día abre la ventana de novedades (justificar, permiso, vacaciones, autorizar a trabajar)
+    tableCard.querySelectorAll('td.k[data-f]').forEach(td=>{
+      td.style.cursor = 'pointer';
+      td.onclick = ()=>{
+        const f = porId[td.dataset.f], d = td.dataset.d;
+        if(f) editarNovedadDia(f, d, nmap[f.staffId+'_'+d] || null);
+      };
+    });
+    const pista = document.createElement('div');
+    pista.className = 'nm-pista';
+    pista.textContent = cierre ? 'Mes cerrado: solo se puede consultar y descargar.' : 'Toca un día para justificar una falta, registrar un permiso o vacaciones, o autorizar que trabaje un día libre.';
+    wrap.appendChild(pista);
 
     // ---- exportar ----
-    const txt = {ok:'Asistió', falta:'Falta', hoy:'Pendiente hoy', prog:'Le toca', libre:'Libre', vac:'Vacaciones', perm:'Permiso', extra:'Asistió sin que le tocara', sinh:'Asistió', otro:'Otro', nada:''};
-    const letra = {ok:'A', falta:'F', hoy:'…', prog:'·', libre:'L', vac:'V', perm:'P', extra:'E', sinh:'A', otro:'?', nada:''};
+    const txt = {ok:'Asistió', falta:'Falta', justif:'Falta justificada', hoy:'Pendiente hoy', prog:'Le toca', libre:'Libre', vac:'Vacaciones', perm:'Permiso', extra:'Asistió sin que le tocara', sinh:'Asistió', otro:'Otro', nada:''};
+    const letra = {ok:'A', falta:'F', justif:'J', hoy:'…', prog:'·', libre:'L', vac:'V', perm:'P', extra:'E', sinh:'A', otro:'?', nada:''};
     const actions = document.createElement('div');
     actions.className = 'card row wrap';
     if(mode === 'mes'){
@@ -3313,7 +3816,13 @@
       btnXls.onclick = async ()=>{
         btnXls.disabled = true; btnXls.textContent = 'Preparando el archivo…';
         try{
-          await descargarHojaAsistenciaExcel({start:start, end:end, dates:dates, today:today, filas:todas, allRows:c.allRows, days:c.days, linea:linea});
+          let modelo, metaCierre = null;
+          if(cierre && cierre.modelo){ modelo = cierre.modelo; metaCierre = cierre; }
+          else {
+            const cambios = await consultarAuditoriaRango(start, end);
+            modelo = construirModelo({start:start, end:end, dates:dates, today:today, filas:todas, allRows:c.allRows, days:c.days, linea:linea, nmap:nmap, pun:pun, cambios:cambios});
+          }
+          await descargarHojaAsistenciaExcel(modelo, metaCierre);
         }catch(e){ showToast(e && e.message ? e.message : 'No se pudo generar el archivo.'); }
         render();
       };
@@ -3323,11 +3832,11 @@
     btnCsv.className = mode === 'mes' ? 'action secundario' : 'action';
     btnCsv.innerHTML = icon('download',18)+'Descargar CSV';
     btnCsv.onclick = ()=>{
-      const head = ['Nombre','Cargo','Área'].concat(dates.map(d=> d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4))).concat(['Asistió','Faltas','Asistió sin que le tocara','Cumplimiento %']);
+      const head = ['Nombre','Cargo','Área'].concat(dates.map(d=> d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4))).concat(['Asistió','Faltas','Faltas justificadas','Asistió sin que le tocara','Atrasos','Cumplimiento %']);
       let csv = head.map(csvEscape).join(',')+'\n';
       filas.forEach(f=>{
         const cu = (f.ok + f.falt) ? Math.round(f.ok * 100 / (f.ok + f.falt)) : '';
-        csv += [f.nombre, f.cargo, f.area].concat(dates.map(d=> txt[f.est[d]])).concat([f.ok, f.falt, f.extra, cu]).map(csvEscape).join(',')+'\n';
+        csv += [f.nombre, f.cargo, f.area].concat(dates.map(d=> txt[f.est[d]])).concat([f.ok, f.falt, f.just, f.extra, pun ? f.atrasos : '', cu]).map(csvEscape).join(',')+'\n';
       });
       downloadFile('comparativa_horario_'+(mode==='semana' ? 'semana_' : 'mes_')+start+'.csv', '\ufeff'+csv, 'text/csv;charset=utf-8');
     };
@@ -3345,7 +3854,7 @@
         ['Programados'].concat(dates.map(d=> String(progDia[d]))).concat(['','']),
         ['Asistieron'].concat(dates.map(d=> d > today ? '' : String(asisDia[d]))).concat([String(tOk), String(tFalt)])
       ]});
-      const sub = c.label + (state.nominaArea !== 'todas' ? ' · '+state.nominaArea : '')+'  —  A = asistió · F = falta · L = libre · V = vacaciones · P = permiso · E = asistió sin que le tocara · · = le toca';
+      const sub = c.label + (state.nominaArea !== 'todas' ? ' · '+state.nominaArea : '')+'  —  A = asistió · F = falta · J = falta justificada · L = libre · V = vacaciones · P = permiso · E = asistió sin que le tocara · · = le toca';
       const colStyles = {0:{cellWidth: mode === 'mes' ? 34 : 38, halign:'left'}};
       for(let i = 1; i < headers.length; i++) colStyles[i] = {halign:'center'};
       generarPdf('comparativa_horario_'+(mode==='semana' ? 'semana_' : 'mes_')+start+'.pdf', 'Comparativa · Horario y asistencia', sub, sections,
@@ -3354,35 +3863,102 @@
     };
     actions.appendChild(btnCsv); actions.appendChild(btnPdf);
     if(mode !== 'mes'){
-      const pista = document.createElement('div');
-      pista.style.cssText = 'width:100%;font-size:12.5px;color:var(--texto-suave);font-weight:600;';
-      pista.textContent = 'La hoja de asistencia completa con el resumen del mes se descarga desde la vista Mes.';
-      actions.appendChild(pista);
+      const pi = document.createElement('div');
+      pi.style.cssText = 'width:100%;font-size:12.5px;color:var(--texto-suave);font-weight:600;';
+      pi.textContent = 'La hoja de asistencia completa con el resumen del mes se descarga desde la vista Mes.';
+      actions.appendChild(pi);
     }
     wrap.appendChild(actions);
 
     const note = document.createElement('div');
     note.className = 'card';
-    note.innerHTML = '<p class="nm-note"><b>Cómo se compara:</b> un día cuenta como <b>asistió</b> si el guardia registró la entrada de esa persona ese día. Si le tocaba trabajar (código A) y no hay registro, es una <b>falta</b> (los días de hoy y los que vienen no cuentan hasta que pasen). Si no le tocaba —libre, vacaciones o permiso— y vino, aparece como <b>asistió sin que le tocara</b> y conviene confirmar quién lo autorizó. Los días de vacaciones (V) y permiso (P) no son faltas. El cumplimiento es días cumplidos ÷ (cumplidos + faltas). Se actualiza solo a medida que se registran las entradas.</p>';
+    note.innerHTML = '<p class="nm-note"><b>Cómo se compara:</b> un día cuenta como <b>asistió</b> si el guardia registró la entrada de esa persona ese día. Si le tocaba trabajar (código A) y no hay registro, es una <b>falta</b>; si tiene una novedad de <b>falta justificada</b>, deja de contar como falta sin justificar. Los días de hoy y los que vienen no cuentan hasta que pasen. Si no le tocaba —libre, vacaciones o permiso— y vino, aparece como <b>asistió sin que le tocara</b> hasta que alguien lo autorice (en la garita se pide la autorización al registrar la entrada). Los días de vacaciones (V) y permiso (P) no son faltas. El cumplimiento es días cumplidos ÷ (cumplidos + faltas sin justificar).'+
+      (pun ? ' Un <b>atraso</b> es llegar después de las '+horaBonita(pun.entrada)+' más '+pun.tolerancia+' min de tolerancia.' : '')+'</p>';
     wrap.appendChild(note);
   }
 
-  // ---- Descarga: hoja de asistencia del mes (Excel) con resumen y novedades ----
-  async function descargarHojaAsistenciaExcel(c){
-    await loadExcelJs();
-    const dates = c.dates, nd = dates.length, today = c.today;
+  // ---- Modelo del mes: lo que se descarga en Excel y lo que queda guardado al cerrar ----
+  function construirModelo(c){
     const ym = c.start.slice(0,7), Y = +ym.slice(0,4), M = +ym.slice(5,7);
-    const MES = MESES_ES[M - 1].toUpperCase();
-    const corte = c.end < today ? c.end : today;
+    const today = c.today;
+    const sinSalida = {}, sinSalidaLista = [];
+    Object.keys(c.days).sort().forEach(d=>{
+      if(d >= today || d < c.start || d > c.end) return;
+      (c.days[d] || []).forEach(rec=>{
+        const p = state.staff.find(x=> x.id === rec.staffId);
+        if(p && p.resident) return;
+        if(rec.salida) return;
+        sinSalida[rec.staffId] = (sinSalida[rec.staffId] || 0) + 1;
+        sinSalidaLista.push({d:d, rec:rec});
+      });
+    });
+    const enCrono = {};
+    c.filas.forEach(f=>{ enCrono[f.staffId] = true; });
+    const asist = {};
+    c.allRows.forEach(r=>{ asist[r.id] = r.cells; });
+
+    const filas = c.filas.map(f=>{
+      const h = c.allRows.find(x=> x.id === f.staffId) || {totalMins:0, extraMins:0, noc:0};
+      const codes = {}, progMap = {};
+      c.dates.forEach(d=>{ codes[d] = codigoDeEst(f, d); progMap[d] = f.prog[d] || ''; });
+      return {staffId:f.staffId, nombre:f.nombre, cargo:f.cargo || '', linea:f.linea || '', area:f.area, orden:f.orden, codes:codes, progMap:progMap,
+        progTotal:f.progTotal, ok:f.ok, falt:f.falt, just:f.just, libres:f.libres, vac:f.vac, perm:f.perm, extra:f.extra, aut:f.aut,
+        atrasos:f.atrasos, minAtraso:f.minAtraso, sinSalida:(sinSalida[f.staffId] || 0), totalMins:h.totalMins, extraMins:h.extraMins, noc:h.noc};
+    });
+
+    const novedades = [];
+    c.filas.forEach(f=>{
+      c.dates.forEach(d=>{
+        const e = f.est[d], nov = f.nov[d];
+        const base = {d:d, nombre:f.nombre, cargo:f.cargo || '', justificacion:'', autoriza:''};
+        if(e === 'falta') novedades.push(Object.assign({}, base, {tipo:'FALTA', detalle:'Le tocaba trabajar y no hay entrada registrada ni justificación.'}));
+        else if(e === 'justif') novedades.push(Object.assign({}, base, {tipo:'FALTA JUSTIFICADA', detalle:'Le tocaba trabajar y no asistió.', justificacion:nov.motivo, autoriza:nov.autoriza}));
+        else if(e === 'extra') novedades.push(Object.assign({}, base, {tipo:{L:'ASISTIÓ EN DÍA LIBRE', V:'ASISTIÓ EN VACACIONES', P:'ASISTIÓ CON PERMISO'}[f.prog[d]] || 'ASISTIÓ SIN PROGRAMACIÓN',
+          detalle:'Asistió en un día en que no le tocaba trabajar: requiere autorización.', justificacion:nov ? nov.motivo : '', autoriza:nov ? nov.autoriza : ''}));
+        else if(e === 'sinh') novedades.push(Object.assign({}, base, {tipo:'ASISTIÓ SIN HORARIO CARGADO', detalle:'Hay entrada registrada, pero el cronograma no tiene código para ese día.'}));
+        else if(e === 'ok' && nov && nov.codigo === 'A') novedades.push(Object.assign({}, base, {tipo:'AUTORIZADO A TRABAJAR', detalle:'Trabajó un día que no le tocaba, con autorización.', justificacion:nov.motivo, autoriza:nov.autoriza}));
+        else if(nov && (nov.codigo === 'P' || nov.codigo === 'V' || nov.codigo === 'L') && !f.hubo[d]) novedades.push(Object.assign({}, base, {tipo:(NOV_ETIQUETA[nov.codigo]+' (registrado en la app)').toUpperCase(), detalle:'Cambio hecho en la app sobre el cronograma.', justificacion:nov.motivo, autoriza:nov.autoriza}));
+        if(f.tarde[d]){
+          const cel = asist[f.staffId] && asist[f.staffId][d];
+          novedades.push(Object.assign({}, base, {tipo:'ATRASO', detalle:'Entró a las '+(cel && cel.entrada ? cel.entrada : '')+', '+f.tarde[d]+' min después de las '+(c.pun ? c.pun.entrada : '')+'.'}));
+        }
+      });
+    });
+    sinSalidaLista.forEach(x=>{
+      const p = state.staff.find(s=> s.id === x.rec.staffId);
+      novedades.push({d:x.d, tipo:'ENTRADA SIN SALIDA', nombre:x.rec.name || (p && p.name) || '', cargo:'', detalle:'Entró a las '+x.rec.entrada+' y no tiene salida registrada: sus horas no se pueden calcular.', justificacion:'', autoriza:''});
+    });
+    novedades.sort((a,b)=> a.d.localeCompare(b.d) || a.nombre.localeCompare(b.nombre,'es'));
+
+    const marcaciones = [];
+    Object.keys(c.days).sort().forEach(d=>{
+      if(d < c.start || d > c.end) return;
+      (c.days[d] || []).slice().sort((a,b)=> (a.name || '').localeCompare(b.name || '','es') || (a.entrada || '').localeCompare(b.entrada || '')).forEach(rec=>{
+        const mins = calcMinutos(rec.entrada, rec.salida);
+        const cel = asist[rec.staffId] && asist[rec.staffId][d];
+        const tarde = (cel && cel.entrada === rec.entrada && cel.tarde > 0) ? cel.tarde : 0;
+        marcaciones.push({d:d, name:rec.name || '', area:rec.area || '', entrada:rec.entrada || '', salida:rec.salida || '', sinSalida:(!rec.salida && !rec.salidaFecha),
+          mins:(mins == null ? null : mins), entradaPor:rec.entradaPor || '', salidaPor:rec.salidaPor || '', enCrono:!!enCrono[rec.staffId], tarde:tarde});
+      });
+    });
+
+    return {ym:ym, mes:MESES_ES[M - 1].toUpperCase(), anio:Y, linea:(c.linea || 'PORCICOLA').toUpperCase(),
+      inicio:c.start, fin:c.end, corte:(c.end < today ? c.end : today), mesEnCurso:(c.end >= today), dates:c.dates,
+      puntualidad:(c.pun || null), filas:filas, novedades:novedades, marcaciones:marcaciones,
+      cambios:(c.cambios || []).map(x=>({en:x.en || '', por:x.por || '', accion:x.accion || '', detalle:x.detalle || ''}))};
+  }
+
+  // ---- Descarga: hoja de asistencia del mes (Excel) con resumen, novedades, marcaciones y cambios ----
+  async function descargarHojaAsistenciaExcel(m, cierre){
+    await loadExcelJs();
+    const dates = m.dates, nd = dates.length;
+    const MES = m.mes, Y = m.anio, filas = m.filas, pun = m.puntualidad;
     const generado = new Date().toLocaleString('es-EC',{dateStyle:'short', timeStyle:'short'});
     const usuario = (state.session && (state.session.nombre || ROLE_LABELS[state.session.role])) || '';
-    const lineaNeg = (c.linea || 'PORCICOLA').toUpperCase();
-    const filas = c.filas;
-
+    const lineaNeg = m.linea;
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Portería'; wb.created = new Date();
     wb.calcProperties = {fullCalcOnLoad: true};
-
     const thin = {style:'thin', color:{argb:'FF9E9E9E'}};
     const BORDE = {top:thin, left:thin, bottom:thin, right:thin};
     function pon(ws, r, col, val, o){
@@ -3396,45 +3972,40 @@
       if(o.fmt) cell.numFmt = o.fmt;
       return cell;
     }
-    const codigoDe = (f, d)=>{
-      const e = f.est[d];
-      if(e === 'ok' || e === 'sinh') return 'A';
-      if(e === 'falta') return 'F';
-      if(e === 'libre') return 'L';
-      if(e === 'vac') return 'V';
-      if(e === 'perm') return 'P';
-      if(e === 'extra') return 'E';
-      if(e === 'otro') return String(f.days[d]).slice(0,2);
-      return '';
-    };
+    const COLORES = Object.assign({J:'FFF9CB9C'}, COLOR_COD);
     const colorTexto = (cod)=> (cod === 'P' || cod === 'F') ? 'FFFFFFFF' : 'FF000000';
+    const horaTxt = (mins)=> mins ? Math.floor(mins / 60)+':'+p2(mins % 60) : '';
+    const dec = (mins)=> Math.round(mins / 60 * 100) / 100;
+    const estadoTxt = cierre
+      ? 'MES CERRADO el '+fechaHoraCorta(cierre.en)+' por '+(cierre.cerradoPor || '')+' · Huella '+cierre.huella+(cierreIntegro(cierre) ? ' (íntegra)' : ' (ALTERADA)')
+      : (m.mesEnCurso ? 'Mes en curso (sin cerrar)' : 'Mes sin cerrar');
 
-    // ===== Hoja 1: ASISTENCIA (mismo formato del cronograma, con la asistencia real) =====
+    // ===== Hoja 1: ASISTENCIA =====
     const ws = wb.addWorksheet('ASISTENCIA '+MES.slice(0,3)+' '+Y, {
       views:[{state:'frozen', xSplit:4, ySplit:5}],
       pageSetup:{orientation:'landscape', paperSize:9, fitToPage:true, fitToWidth:1, fitToHeight:0, horizontalCentered:true}
     });
     const cD0 = 5, cDN = 4 + nd;
-    const sumCols = ['DIAS JORNADA','ASISTIÓ','FALTAS','LIBRES','VACAC','PERMISO','EXTRA','TOTAL','% CUMPL.'];
+    const sumCols = ['DIAS JORNADA','ASISTIÓ','FALTAS','JUSTIF.','LIBRES','VACAC','PERMISO','EXTRA','TOTAL','% CUMPL.'].concat(pun ? ['ATRASOS'] : []);
     const cS0 = cDN + 1, cObs = cS0 + sumCols.length, cLast = cObs;
     ws.getColumn(1).width = 4.5; ws.getColumn(2).width = 34; ws.getColumn(3).width = 16; ws.getColumn(4).width = 22;
     for(let i = cD0; i <= cDN; i++) ws.getColumn(i).width = 4.6;
     for(let i = cS0; i < cObs; i++) ws.getColumn(i).width = 9.5;
     ws.getColumn(cObs).width = 34;
     [28, 20, 20, 24, 30].forEach((h, i)=>{ ws.getRow(i + 1).height = h; });
-
     ws.mergeCells(1, 1, 2, 4);
     pon(ws, 1, 1, MES+' - '+Y, {size:20, bold:true, border:false});
     ws.mergeCells(1, cD0, 1, cLast);
-    pon(ws, 1, cD0, 'HOJA DE ASISTENCIA · PROGRAMADO VS REAL', {size:16, bold:true, fill:'FFD9EAD3', border:false});
+    pon(ws, 1, cD0, 'HOJA DE ASISTENCIA · PROGRAMADO VS REAL', {size:16, bold:true, fill: cierre ? 'FFFFE599' : 'FFD9EAD3', border:false});
     ws.mergeCells(2, cD0, 2, cLast);
-    pon(ws, 2, cD0, lineaNeg+'  ·  Corte: '+formatDateEs(corte)+'  ·  Generado: '+generado+(usuario ? ' por '+usuario : ''), {size:9, italic:true, border:false});
+    pon(ws, 2, cD0, lineaNeg+'  ·  Corte: '+formatDateEs(m.corte)+'  ·  '+estadoTxt+'  ·  Generado: '+generado+(usuario ? ' por '+usuario : ''), {size:9, italic:true, border:false});
     ws.mergeCells(3, 1, 3, 4);
     pon(ws, 3, 1, 'LÍNEA DE NEGOCIO: '+lineaNeg, {size:9, bold:true, border:false});
-    [['V','VACACIONES'],['L','LIBRE'],['A','ASISTIÓ'],['P','PERMISO'],['F','FALTA'],['E','EXTRA *']].forEach((it, i)=>{
+    [['V','VACACIONES'],['L','LIBRE'],['A','ASISTIÓ'],['P','PERMISO'],['F','FALTA'],['J','JUSTIFICADA'],['E','EXTRA *']].forEach((it, i)=>{
       const c0 = cD0 + i * 4;
+      if(c0 + 3 > cLast) return;
       ws.mergeCells(3, c0, 3, c0 + 3);
-      pon(ws, 3, c0, it[0]+' '+it[1], {size:7, bold:true, fill:COLOR_COD[it[0]], color:colorTexto(it[0])});
+      pon(ws, 3, c0, it[0]+' '+it[1], {size:7, bold:true, fill:COLORES[it[0]], color:colorTexto(it[0])});
     });
     ws.mergeCells(4, 1, 4, 4);
     pon(ws, 4, 1, 'REGISTRO DE ASISTENCIA DEL PERSONAL', {size:9, bold:true, fill:'FFC9DAF8'});
@@ -3443,13 +4014,12 @@
     pon(ws, 5, 3, 'LINEA DE NEGOCIO', {size:9, bold:true, fill:'FFE0F7FA'});
     pon(ws, 5, 4, 'CARGO', {size:12, bold:true, fill:'FFE0F7FA'});
     dates.forEach((d, i)=>{
-      const k = parseDate(d).getDay();
-      pon(ws, 4, cD0 + i, DIA_CLAVES[k].toUpperCase(), {size:7, bold:true, fill:'FFC9DAF8'});
+      pon(ws, 4, cD0 + i, DIA_CLAVES[parseDate(d).getDay()].toUpperCase(), {size:7, bold:true, fill:'FFC9DAF8'});
       pon(ws, 5, cD0 + i, Number(d.slice(8)), {size:8, bold:true, fill:'FFC9DAF8'});
     });
     sumCols.forEach((t, i)=>{
       ws.mergeCells(4, cS0 + i, 5, cS0 + i);
-      pon(ws, 4, cS0 + i, t, {size:8, bold:true, fill: i === 0 ? 'FFFFF2CC' : (t === 'FALTAS' ? 'FFF4CCCC' : 'FFC9DAF8')});
+      pon(ws, 4, cS0 + i, t, {size:8, bold:true, fill: i === 0 ? 'FFFFF2CC' : (t === 'FALTAS' ? 'FFF4CCCC' : (t === 'JUSTIF.' ? 'FFF9CB9C' : 'FFC9DAF8'))});
     });
     ws.mergeCells(4, cObs, 5, cObs);
     pon(ws, 4, cObs, 'OBSERVACIONES', {size:9, bold:true, fill:'FFD9EAD3'});
@@ -3461,55 +4031,55 @@
       pon(ws, r, 2, f.nombre, {size:11, h:'left'});
       pon(ws, r, 3, f.linea || lineaNeg, {size:8});
       pon(ws, r, 4, f.cargo, {size:9});
-      const cnt = {A:0, F:0, L:0, V:0, P:0, E:0}; let llenos = 0;
+      const cnt = {A:0, F:0, J:0, L:0, V:0, P:0, E:0}; let llenos = 0;
       dates.forEach((d, k)=>{
-        const cod = codigoDe(f, d);
+        const cod = f.codes[d] || '';
         if(cnt[cod] != null) cnt[cod]++;
         if(cod) llenos++;
-        pon(ws, r, cD0 + k, cod || null, {size:8, bold:true, fill: COLOR_COD[cod], color: colorTexto(cod)});
+        pon(ws, r, cD0 + k, cod || null, {size:8, bold:true, fill: COLORES[cod], color: colorTexto(cod)});
       });
       const rng = L0+r+':'+LN+r;
       const fx = (cod, res)=> ({formula:'COUNTIF('+rng+',"'+cod+'")', result:res});
       pon(ws, r, cS0, f.progTotal, {size:10, fill:'FFFFF2CC'});
       pon(ws, r, cS0 + 1, fx('A', cnt.A), {size:10, bold:true});
       pon(ws, r, cS0 + 2, fx('F', cnt.F), {size:10, bold:true, color: cnt.F ? 'FFC00000' : 'FF000000'});
-      pon(ws, r, cS0 + 3, fx('L', cnt.L), {size:10});
-      pon(ws, r, cS0 + 4, fx('V', cnt.V), {size:10});
-      pon(ws, r, cS0 + 5, fx('P', cnt.P), {size:10});
-      pon(ws, r, cS0 + 6, fx('E', cnt.E), {size:10});
-      pon(ws, r, cS0 + 7, {formula:'COUNTA('+rng+')', result:llenos}, {size:10, bold:true});
+      pon(ws, r, cS0 + 3, fx('J', cnt.J), {size:10});
+      pon(ws, r, cS0 + 4, fx('L', cnt.L), {size:10});
+      pon(ws, r, cS0 + 5, fx('V', cnt.V), {size:10});
+      pon(ws, r, cS0 + 6, fx('P', cnt.P), {size:10});
+      pon(ws, r, cS0 + 7, fx('E', cnt.E), {size:10});
+      pon(ws, r, cS0 + 8, {formula:'COUNTA('+rng+')', result:llenos}, {size:10, bold:true});
       const colA = colLetra(cS0 + 1), colF = colLetra(cS0 + 2);
-      pon(ws, r, cS0 + 8, {formula:'IF('+colA+r+'+'+colF+r+'=0,"",'+colA+r+'/('+colA+r+'+'+colF+r+'))', result:(cnt.A + cnt.F) ? cnt.A / (cnt.A + cnt.F) : ''}, {size:10, bold:true, fmt:'0%'});
+      pon(ws, r, cS0 + 9, {formula:'IF('+colA+r+'+'+colF+r+'=0,"",'+colA+r+'/('+colA+r+'+'+colF+r+'))', result:(cnt.A + cnt.F) ? cnt.A / (cnt.A + cnt.F) : ''}, {size:10, bold:true, fmt:'0%'});
+      if(pun) pon(ws, r, cS0 + 10, f.atrasos, {size:10, color: f.atrasos ? 'FFC00000' : 'FF000000'});
       pon(ws, r, cObs, null, {size:9, h:'left'});
     });
-    // totales por día
     const rF = 6 + filas.length;
-    const filaTot = [['PROGRAMADOS', 'FFFFF2CC'], ['ASISTIERON (A + E)', 'FFD9EAD3'], ['FALTAS', 'FFF4CCCC']];
-    filaTot.forEach((t, i)=>{
+    [['PROGRAMADOS', 'FFFFF2CC'], ['ASISTIERON (A + E)', 'FFD9EAD3'], ['FALTAS (sin justificar)', 'FFF4CCCC']].forEach((t, i)=>{
       ws.mergeCells(rF + i, 1, rF + i, 4);
       pon(ws, rF + i, 1, t[0], {size:9, bold:true, fill:t[1], h:'right'});
     });
     dates.forEach((d, k)=>{
       const colL = colLetra(cD0 + k), rg = colL+'6:'+colL+(5 + filas.length);
-      const prog = filas.filter(f=> f.prog[d] === 'T').length;
-      const asis = filas.filter(f=> f.est[d] === 'ok' || f.est[d] === 'sinh' || f.est[d] === 'extra').length;
-      const falt = filas.filter(f=> f.est[d] === 'falta').length;
+      const prog = filas.filter(f=> f.progMap[d] === 'T').length;
+      const asis = filas.filter(f=> f.codes[d] === 'A' || f.codes[d] === 'E').length;
+      const falt = filas.filter(f=> f.codes[d] === 'F').length;
       pon(ws, rF, cD0 + k, prog, {size:8, bold:true, fill:'FFFFF2CC'});
       pon(ws, rF + 1, cD0 + k, {formula:'COUNTIF('+rg+',"A")+COUNTIF('+rg+',"E")', result:asis}, {size:8, bold:true, fill:'FFD9EAD3'});
       pon(ws, rF + 2, cD0 + k, {formula:'COUNTIF('+rg+',"F")', result:falt}, {size:8, bold:true, fill:'FFF4CCCC'});
     });
-    for(let i = 0; i < sumCols.length - 1; i++){
+    const claves = ['progTotal','ok','falt','just','libres','vac','perm','extra'];
+    claves.forEach((k, i)=>{
       const colL = colLetra(cS0 + i), rg = colL+'6:'+colL+(5 + filas.length);
-      const total = filas.reduce((s, f)=>{
-        const v = [f.progTotal, f.ok, f.falt, f.libres, f.vac, f.perm, f.extra][i];
-        return s + (v || 0);
-      }, 0);
-      if(i < 7) pon(ws, rF, cS0 + i, {formula:'SUM('+rg+')', result:total}, {size:9, bold:true, fill:'FFC9DAF8'});
+      pon(ws, rF, cS0 + i, {formula:'SUM('+rg+')', result:filas.reduce((s, f)=> s + (f[k] || 0), 0)}, {size:9, bold:true, fill:'FFC9DAF8'});
+    });
+    if(pun){
+      const colL = colLetra(cS0 + 10), rg = colL+'6:'+colL+(5 + filas.length);
+      pon(ws, rF, cS0 + 10, {formula:'SUM('+rg+')', result:filas.reduce((s, f)=> s + (f.atrasos || 0), 0)}, {size:9, bold:true, fill:'FFC9DAF8'});
     }
-    // notas y firmas
     let rN = rF + 4;
     ws.mergeCells(rN, 1, rN, cLast);
-    pon(ws, rN, 1, '* E = asistió en un día no programado (libre, vacaciones o permiso): requiere autorización de la jefatura.   F = le tocaba trabajar y no hay entrada registrada.   Las vacaciones (V) y los permisos (P) no se cuentan como faltas.', {size:8, italic:true, h:'left', border:false});
+    pon(ws, rN, 1, '* E = asistió en un día no programado (libre, vacaciones o permiso) sin autorización registrada.   F = le tocaba trabajar y no hay entrada registrada.   J = falta justificada (motivo y autorización en la hoja NOVEDADES).   Las vacaciones (V) y los permisos (P) no se cuentan como faltas.', {size:8, italic:true, h:'left', border:false});
     rN++;
     ws.mergeCells(rN, 1, rN, cLast);
     pon(ws, rN, 1, 'Hoja generada a partir de las entradas y salidas registradas en Portería y del cronograma cargado. Los totales por persona y por día son fórmulas: si se corrige un código, se recalculan.', {size:8, italic:true, h:'left', border:false});
@@ -3524,59 +4094,49 @@
 
     // ===== Hoja 2: RESUMEN MENSUAL =====
     const wr = wb.addWorksheet('RESUMEN MENSUAL', {views:[{state:'frozen', ySplit:7}], pageSetup:{orientation:'landscape', paperSize:9, fitToPage:true, fitToWidth:1, fitToHeight:0}});
-    const heads = ['N°','NOMBRE','LINEA DE NEGOCIO','CARGO','DÍAS DE JORNADA PROGRAMADOS','DÍAS ASISTIDOS','FALTAS','% CUMPLIMIENTO','LIBRES','VACACIONES','PERMISOS','ASISTIÓ SIN QUE LE TOCARA','ENTRADAS SIN SALIDA','HORAS TRABAJADAS','HORAS EXTRA (h:mm)','HORAS EXTRA (decimal)','HORAS NOCTURNAS 25%','OBSERVACIONES'];
-    const anchos = [4.5, 32, 16, 22, 13, 11, 9, 13, 9, 11, 10, 14, 12, 12, 12, 12, 13, 36];
+    const heads = ['N°','NOMBRE','LINEA DE NEGOCIO','CARGO','DÍAS DE JORNADA PROGRAMADOS','DÍAS ASISTIDOS','FALTAS SIN JUSTIFICAR','FALTAS JUSTIFICADAS','% CUMPLIMIENTO','LIBRES','VACACIONES','PERMISOS','ASISTIÓ SIN QUE LE TOCARA','ENTRADAS SIN SALIDA']
+      .concat(pun ? ['ATRASOS','MIN. DE ATRASO'] : []).concat(['HORAS TRABAJADAS','HORAS EXTRA (h:mm)','HORAS EXTRA (decimal)','HORAS NOCTURNAS 25%','OBSERVACIONES']);
+    const anchos = [4.5, 32, 16, 22, 13, 11, 11, 11, 13, 9, 11, 10, 14, 12].concat(pun ? [10, 11] : []).concat([12, 12, 12, 13, 36]);
     anchos.forEach((w, i)=>{ wr.getColumn(i + 1).width = w; });
     wr.mergeCells(1, 1, 1, heads.length);
-    pon(wr, 1, 1, 'RESUMEN MENSUAL DE ASISTENCIA — '+MES+' '+Y, {size:18, bold:true, fill:'FFD9EAD3', border:false});
+    pon(wr, 1, 1, 'RESUMEN MENSUAL DE ASISTENCIA — '+MES+' '+Y, {size:18, bold:true, fill: cierre ? 'FFFFE599' : 'FFD9EAD3', border:false});
     wr.getRow(1).height = 32;
     wr.mergeCells(2, 1, 2, heads.length);
-    pon(wr, 2, 1, lineaNeg+'  ·  Corte: '+formatDateEs(corte)+(c.end > today ? '  (mes en curso: los días siguientes aún no cuentan)' : '')+'  ·  Generado: '+generado+(usuario ? ' por '+usuario : ''), {size:9, italic:true, h:'left', border:false});
-    // entradas sin salida por persona (solo días ya pasados)
-    const sinSalida = {};
-    const sinSalidaLista = [];
-    Object.keys(c.days).sort().forEach(d=>{
-      if(d >= today || d < c.start || d > c.end) return;
-      (c.days[d] || []).forEach(rec=>{
-        const p = state.staff.find(x=> x.id === rec.staffId);
-        if(p && p.resident) return;
-        if(rec.salida) return;
-        sinSalida[rec.staffId] = (sinSalida[rec.staffId] || 0) + 1;
-        sinSalidaLista.push({d:d, rec:rec});
-      });
-    });
-    let tProg = 0, tAs = 0, tFa = 0, tLib = 0, tVac = 0, tPer = 0, tEx = 0, tSS = 0, tHm = 0, tExm = 0, tNoc = 0;
-    filas.forEach(f=>{
-      const h = c.allRows.find(x=> x.id === f.staffId) || {totalMins:0, extraMins:0, noc:0};
-      tProg += f.progTotal; tAs += f.ok; tFa += f.falt; tLib += f.libres; tVac += f.vac; tPer += f.perm; tEx += f.extra; tSS += (sinSalida[f.staffId] || 0);
-      tHm += h.totalMins; tExm += h.extraMins; tNoc += h.noc;
-    });
-    // indicadores
-    [[2, 3, 'CUMPLIMIENTO GLOBAL', (tAs + tFa) ? tAs / (tAs + tFa) : '', '0%'], [4, 6, 'FALTAS', tFa, '0'], [7, 11, 'ASISTIÓ SIN QUE LE TOCARA', tEx, '0'], [12, 14, 'ENTRADAS SIN SALIDA (TODO EL PERSONAL)', sinSalidaLista.length, '0']].forEach(k=>{
+    pon(wr, 2, 1, lineaNeg+'  ·  Corte: '+formatDateEs(m.corte)+(m.mesEnCurso ? '  (mes en curso: los días siguientes aún no cuentan)' : '')+'  ·  '+estadoTxt+'  ·  Generado: '+generado+(usuario ? ' por '+usuario : ''), {size:9, italic:true, h:'left', border:false});
+    const sum = (k)=> filas.reduce((s, f)=> s + (f[k] || 0), 0);
+    const tProg = sum('progTotal'), tAs = sum('ok'), tFa = sum('falt'), tJu = sum('just'), tLib = sum('libres'), tVac = sum('vac'), tPer = sum('perm'), tEx = sum('extra'), tSS = sum('sinSalida');
+    const tAtr = sum('atrasos'), tMinAtr = sum('minAtraso'), tHm = sum('totalMins'), tExm = sum('extraMins'), tNoc = sum('noc');
+    const sinSalidaTotal = m.novedades.filter(x=> x.tipo === 'ENTRADA SIN SALIDA').length;
+    const kp = [[2, 3, 'CUMPLIMIENTO GLOBAL', (tAs + tFa) ? tAs / (tAs + tFa) : '', '0%'], [4, 6, 'FALTAS SIN JUSTIFICAR', tFa, '0'], [7, 9, 'FALTAS JUSTIFICADAS', tJu, '0'],
+      [10, 13, 'ASISTIÓ SIN QUE LE TOCARA', tEx, '0'], [14, 17, 'ENTRADAS SIN SALIDA (TODO EL PERSONAL)', sinSalidaTotal, '0']];
+    kp.forEach(k=>{
       wr.mergeCells(4, k[0], 4, k[1]);
       pon(wr, 4, k[0], k[2], {size:8, bold:true, fill:'FFC9DAF8'});
       wr.mergeCells(5, k[0], 5, k[1]);
       pon(wr, 5, k[0], k[3], {size:16, bold:true, fmt:k[4]});
     });
     wr.getRow(5).height = 28;
-    heads.forEach((t, i)=>{ pon(wr, 7, i + 1, t, {size:8, bold:true, fill: i === 6 ? 'FFF4CCCC' : 'FFC9DAF8'}); });
+    heads.forEach((t, i)=>{ pon(wr, 7, i + 1, t, {size:8, bold:true, fill: t.indexOf('SIN JUSTIFICAR') >= 0 ? 'FFF4CCCC' : (t.indexOf('JUSTIFICADAS') >= 0 ? 'FFF9CB9C' : 'FFC9DAF8')}); });
     wr.getRow(7).height = 42;
+    const idxHoras = 14 + (pun ? 2 : 0);
     filas.forEach((f, i)=>{
       const r = 8 + i;
-      const h = c.allRows.find(x=> x.id === f.staffId) || {totalMins:0, extraMins:0, noc:0};
       const cum = (f.ok + f.falt) ? f.ok / (f.ok + f.falt) : '';
-      const vals = [i + 1, f.nombre, f.linea || lineaNeg, f.cargo, f.progTotal, f.ok, f.falt, cum, f.libres, f.vac, f.perm, f.extra, sinSalida[f.staffId] || 0,
-        Math.round(h.totalMins / 60 * 100) / 100, h.extraMins ? Math.floor(h.extraMins/60)+':'+p2(h.extraMins % 60) : '', Math.round(h.extraMins / 60 * 100) / 100, Math.round(h.noc / 60 * 100) / 100, null];
+      const vals = [i + 1, f.nombre, f.linea || lineaNeg, f.cargo, f.progTotal, f.ok, f.falt, f.just, cum, f.libres, f.vac, f.perm, f.extra, f.sinSalida]
+        .concat(pun ? [f.atrasos, f.minAtraso] : [])
+        .concat([dec(f.totalMins), horaTxt(f.extraMins), dec(f.extraMins), dec(f.noc), null]);
       vals.forEach((v, k)=>{
-        pon(wr, r, k + 1, v, {size: k === 1 ? 11 : 10, h: k === 1 ? 'left' : 'center', bold: k === 6 || k === 7,
-          color: (k === 6 && f.falt) ? 'FFC00000' : 'FF000000', fmt: k === 7 ? '0%' : ((k === 13 || k === 15 || k === 16) ? '0.00' : undefined)});
+        const fmtK = (k === 8) ? '0%' : ((k === idxHoras || k === idxHoras + 2 || k === idxHoras + 3) ? '0.00' : undefined);
+        pon(wr, r, k + 1, v, {size: k === 1 ? 11 : 10, h: k === 1 ? 'left' : 'center', bold: k === 6 || k === 8, color: (k === 6 && f.falt) ? 'FFC00000' : 'FF000000', fmt: fmtK});
       });
     });
     const rT = 8 + filas.length;
-    const tot = ['', 'TOTAL', '', '', tProg, tAs, tFa, (tAs + tFa) ? tAs / (tAs + tFa) : '', tLib, tVac, tPer, tEx, tSS, Math.round(tHm / 60 * 100) / 100, tExm ? Math.floor(tExm/60)+':'+p2(tExm % 60) : '', Math.round(tExm / 60 * 100) / 100, Math.round(tNoc / 60 * 100) / 100, ''];
-    tot.forEach((v, k)=>{ pon(wr, rT, k + 1, v, {size:10, bold:true, fill:'FFD9EAD3', fmt: k === 7 ? '0%' : ((k === 13 || k === 15 || k === 16) ? '0.00' : undefined)}); });
+    const tot = ['', 'TOTAL', '', '', tProg, tAs, tFa, tJu, (tAs + tFa) ? tAs / (tAs + tFa) : '', tLib, tVac, tPer, tEx, tSS]
+      .concat(pun ? [tAtr, tMinAtr] : []).concat([dec(tHm), horaTxt(tExm), dec(tExm), dec(tNoc), '']);
+    tot.forEach((v, k)=>{ pon(wr, rT, k + 1, v, {size:10, bold:true, fill:'FFD9EAD3', fmt: k === 8 ? '0%' : ((k === idxHoras || k === idxHoras + 2 || k === idxHoras + 3) ? '0.00' : undefined)}); });
     wr.mergeCells(rT + 2, 1, rT + 2, heads.length);
-    pon(wr, rT + 2, 1, 'Cómo se calcula: días asistidos = días con entrada registrada en una fecha en que le tocaba trabajar · faltas = le tocaba y no hay entrada (hasta la fecha de corte) · % de cumplimiento = asistidos ÷ (asistidos + faltas). Las horas salen de la hora de entrada y de salida menos 1 hora de almuerzo (jornada normal hasta las 16:00, máximo 8 h); las horas extra cuentan desde la salida normal, en minutos reales, cuando la persona sale a partir de las 17:00. Horas nocturnas 25% = entre las 19:00 y las 06:00.', {size:8, italic:true, h:'left', border:false});
+    pon(wr, rT + 2, 1, 'Cómo se calcula: días asistidos = días con entrada registrada en una fecha en que le tocaba trabajar · faltas sin justificar = le tocaba y no hay entrada (hasta la fecha de corte) ni justificación · % de cumplimiento = asistidos ÷ (asistidos + faltas sin justificar). Las horas salen de la hora de entrada y de salida menos 1 hora de almuerzo (jornada normal hasta las 16:00, máximo 8 h); las horas extra cuentan desde la salida normal, en minutos reales, cuando la persona sale a partir de las 17:00. Horas nocturnas 25% = entre las 19:00 y las 06:00.'+
+      (pun ? ' Atraso = entrada después de las '+pun.entrada+' más '+pun.tolerancia+' min de tolerancia, en días en que le tocaba trabajar.' : ''), {size:8, italic:true, h:'left', border:false});
     wr.getRow(rT + 2).height = 54;
     [['ELABORADO POR', 2, 3], ['REVISADO POR (JEFATURA)', 5, 9], ['APROBADO POR (RR. HH.)', 11, 15]].forEach(b=>{
       const r = rT + 6;
@@ -3586,74 +4146,70 @@
       pon(wr, r + 1, b[1], b[0], {size:8, bold:true, border:false});
     });
 
-    // ===== Hoja 3: NOVEDADES (excepciones para revisar y justificar) =====
+    // ===== Hoja 3: NOVEDADES =====
     const wn = wb.addWorksheet('NOVEDADES', {views:[{state:'frozen', ySplit:4}], pageSetup:{orientation:'landscape', paperSize:9, fitToPage:true, fitToWidth:1, fitToHeight:0}});
-    [18, 12, 12, 32, 22, 52, 36, 22].forEach((w, i)=>{ wn.getColumn(i + 1).width = w; });
+    [24, 12, 12, 30, 20, 50, 36, 22].forEach((w, i)=>{ wn.getColumn(i + 1).width = w; });
     wn.mergeCells(1, 1, 1, 8);
-    pon(wn, 1, 1, 'NOVEDADES DEL MES — '+MES+' '+Y, {size:16, bold:true, fill:'FFD9EAD3', border:false});
+    pon(wn, 1, 1, 'NOVEDADES DEL MES — '+MES+' '+Y, {size:16, bold:true, fill: cierre ? 'FFFFE599' : 'FFD9EAD3', border:false});
     wn.getRow(1).height = 28;
     wn.mergeCells(2, 1, 2, 8);
-    pon(wn, 2, 1, 'Excepciones detectadas al comparar el cronograma con las entradas y salidas. Cada una debe quedar justificada y autorizada por la jefatura.', {size:9, italic:true, h:'left', border:false});
-    ['TIPO','FECHA','DÍA','NOMBRE','CARGO','DETALLE','JUSTIFICACIÓN / ACCIÓN','AUTORIZADO POR'].forEach((t, i)=>{ pon(wn, 4, i + 1, t, {size:9, bold:true, fill:'FFC9DAF8'}); });
-    const nov = [];
-    filas.forEach(f=>{
-      dates.forEach(d=>{
-        const e = f.est[d];
-        if(e === 'falta') nov.push({d:d, tipo:'FALTA', color:'FFF4CCCC', f:f, det:'Le tocaba trabajar y no hay entrada registrada.'});
-        if(e === 'extra') nov.push({d:d, tipo:{L:'ASISTIÓ EN DÍA LIBRE', V:'ASISTIÓ EN VACACIONES', P:'ASISTIÓ CON PERMISO'}[f.prog[d]] || 'ASISTIÓ SIN PROGRAMACIÓN', color:'FFFFF2CC', f:f, det:'Asistió en un día en que no le tocaba trabajar: requiere autorización.'});
-        if(e === 'sinh') nov.push({d:d, tipo:'ASISTIÓ SIN HORARIO CARGADO', color:'FFFFF2CC', f:f, det:'Hay entrada registrada, pero el cronograma no tiene código para ese día.'});
-      });
-    });
-    sinSalidaLista.forEach(x=>{
-      const p = state.staff.find(s=> s.id === x.rec.staffId);
-      nov.push({d:x.d, tipo:'ENTRADA SIN SALIDA', color:'FFFCE5CD', f:{nombre: x.rec.name || (p && p.name) || '', cargo: ''}, det:'Entró a las '+x.rec.entrada+' y no tiene salida registrada: sus horas no se pueden calcular.'});
-    });
-    nov.sort((a,b)=> a.d.localeCompare(b.d) || a.f.nombre.localeCompare(b.f.nombre,'es'));
-    nov.forEach((n, i)=>{
+    pon(wn, 2, 1, 'Excepciones detectadas al comparar el cronograma con las entradas y salidas, y novedades registradas en la app. Lo que no tenga justificación ni autorización debe resolverse con la jefatura.', {size:9, italic:true, h:'left', border:false});
+    ['TIPO','FECHA','DÍA','NOMBRE','CARGO','DETALLE','JUSTIFICACIÓN / MOTIVO','AUTORIZADO POR'].forEach((t, i)=>{ pon(wn, 4, i + 1, t, {size:9, bold:true, fill:'FFC9DAF8'}); });
+    const colorNov = (t)=> t === 'FALTA' ? 'FFF4CCCC' : (t.indexOf('JUSTIFICADA') >= 0 || t.indexOf('AUTORIZADO') === 0 ? 'FFD9EAD3' : (t === 'ENTRADA SIN SALIDA' ? 'FFFCE5CD' : (t === 'ATRASO' ? 'FFFFE599' : 'FFFFF2CC')));
+    m.novedades.forEach((n, i)=>{
       const r = 5 + i;
-      const dow = DIAS_LARGO[parseDate(n.d).getDay()];
-      [n.tipo, formatDateShort(n.d), dow, n.f.nombre, n.f.cargo || '', n.det, null, null].forEach((v, k)=>{
-        pon(wn, r, k + 1, v, {size:9, h: (k === 3 || k === 5) ? 'left' : 'center', fill: k === 0 ? n.color : undefined, bold: k === 0});
+      [n.tipo, formatDateShort(n.d), DIAS_LARGO[parseDate(n.d).getDay()], n.nombre, n.cargo || '', n.detalle, n.justificacion || null, n.autoriza || null].forEach((v, k)=>{
+        pon(wn, r, k + 1, v, {size:9, h: (k === 3 || k === 5 || k === 6) ? 'left' : 'center', fill: k === 0 ? colorNov(n.tipo) : undefined, bold: k === 0});
       });
     });
-    if(!nov.length){
+    if(!m.novedades.length){
       wn.mergeCells(5, 1, 5, 8);
       pon(wn, 5, 1, 'Sin novedades en el periodo.', {size:10, italic:true, border:false});
     }
 
-    // ===== Hoja 4: MARCACIONES (evidencia de entradas y salidas) =====
+    // ===== Hoja 4: MARCACIONES =====
     const wm = wb.addWorksheet('MARCACIONES', {views:[{state:'frozen', ySplit:4}], pageSetup:{orientation:'landscape', paperSize:9, fitToPage:true, fitToWidth:1, fitToHeight:0}});
-    [12, 12, 32, 26, 10, 10, 13, 18, 18, 14].forEach((w, i)=>{ wm.getColumn(i + 1).width = w; });
-    wm.mergeCells(1, 1, 1, 10);
-    pon(wm, 1, 1, 'ENTRADAS Y SALIDAS REGISTRADAS — '+MES+' '+Y, {size:16, bold:true, fill:'FFD9EAD3', border:false});
+    [12, 12, 32, 26, 10, 12, 13, 18, 18, 14, 12].forEach((w, i)=>{ wm.getColumn(i + 1).width = w; });
+    wm.mergeCells(1, 1, 1, 11);
+    pon(wm, 1, 1, 'ENTRADAS Y SALIDAS REGISTRADAS — '+MES+' '+Y, {size:16, bold:true, fill: cierre ? 'FFFFE599' : 'FFD9EAD3', border:false});
     wm.getRow(1).height = 28;
-    wm.mergeCells(2, 1, 2, 10);
+    wm.mergeCells(2, 1, 2, 11);
     pon(wm, 2, 1, 'Detalle de cada marcación hecha en la portería (evidencia del resumen). Incluye a todo el personal que registró entrada en el mes.', {size:9, italic:true, h:'left', border:false});
-    ['FECHA','DÍA','NOMBRE','ÁREA','ENTRADA','SALIDA','DURACIÓN (h)','REGISTRÓ ENTRADA','REGISTRÓ SALIDA','EN CRONOGRAMA'].forEach((t, i)=>{ pon(wm, 4, i + 1, t, {size:9, bold:true, fill:'FFC9DAF8'}); });
-    const enCrono = {}; filas.forEach(f=>{ enCrono[f.staffId] = true; });
-    let rm = 5;
-    Object.keys(c.days).sort().forEach(d=>{
-      if(d < c.start || d > c.end) return;
-      (c.days[d] || []).slice().sort((a,b)=> (a.name || '').localeCompare(b.name || '','es') || (a.entrada || '').localeCompare(b.entrada || '')).forEach(rec=>{
-        const mins = calcMinutos(rec.entrada, rec.salida);
-        [formatDateShort(d), DIAS_LARGO[parseDate(d).getDay()], rec.name || '', rec.area || '', rec.entrada || '', rec.salida || (rec.salidaFecha ? '' : 'SIN SALIDA'),
-         mins == null ? '' : Math.round(mins / 60 * 100) / 100, rec.entradaPor || '', rec.salidaPor || '', enCrono[rec.staffId] ? 'Sí' : 'No'].forEach((v, k)=>{
-          pon(wm, rm, k + 1, v, {size:9, h: (k === 2 || k === 3) ? 'left' : 'center', fmt: k === 6 ? '0.00' : undefined,
-            fill: (k === 5 && v === 'SIN SALIDA') ? 'FFFCE5CD' : undefined, bold: (k === 5 && v === 'SIN SALIDA')});
-        });
-        rm++;
+    ['FECHA','DÍA','NOMBRE','ÁREA','ENTRADA','SALIDA','DURACIÓN (h)','REGISTRÓ ENTRADA','REGISTRÓ SALIDA','EN CRONOGRAMA','ATRASO (min)'].forEach((t, i)=>{ pon(wm, 4, i + 1, t, {size:9, bold:true, fill:'FFC9DAF8'}); });
+    m.marcaciones.forEach((x, i)=>{
+      const r = 5 + i;
+      [formatDateShort(x.d), DIAS_LARGO[parseDate(x.d).getDay()], x.name, x.area, x.entrada, x.sinSalida ? 'SIN SALIDA' : x.salida, x.mins == null ? '' : dec(x.mins), x.entradaPor, x.salidaPor, x.enCrono ? 'Sí' : 'No', x.tarde || ''].forEach((v, k)=>{
+        pon(wm, r, k + 1, v, {size:9, h: (k === 2 || k === 3) ? 'left' : 'center', fmt: k === 6 ? '0.00' : undefined,
+          fill: (k === 5 && v === 'SIN SALIDA') ? 'FFFCE5CD' : ((k === 10 && v) ? 'FFFFE599' : undefined), bold: (k === 5 && v === 'SIN SALIDA')});
       });
     });
-    if(rm === 5){
-      wm.mergeCells(5, 1, 5, 10);
+    if(!m.marcaciones.length){
+      wm.mergeCells(5, 1, 5, 11);
       pon(wm, 5, 1, 'No hay marcaciones en el periodo.', {size:10, italic:true, border:false});
+    }
+
+    // ===== Hoja 5: CAMBIOS (registro de quién cambió qué) =====
+    const wc = wb.addWorksheet('CAMBIOS', {views:[{state:'frozen', ySplit:4}], pageSetup:{orientation:'landscape', paperSize:9, fitToPage:true, fitToWidth:1, fitToHeight:0}});
+    [20, 26, 30, 90].forEach((w, i)=>{ wc.getColumn(i + 1).width = w; });
+    wc.mergeCells(1, 1, 1, 4);
+    pon(wc, 1, 1, 'REGISTRO DE CAMBIOS — '+MES+' '+Y, {size:16, bold:true, fill: cierre ? 'FFFFE599' : 'FFD9EAD3', border:false});
+    wc.getRow(1).height = 28;
+    wc.mergeCells(2, 1, 2, 4);
+    pon(wc, 2, 1, 'Quién hizo cada cambio sobre las marcaciones y novedades de este mes, y cuándo. Este registro no se puede borrar desde la app.', {size:9, italic:true, h:'left', border:false});
+    ['FECHA Y HORA','QUIÉN','ACCIÓN','DETALLE'].forEach((t, i)=>{ pon(wc, 4, i + 1, t, {size:9, bold:true, fill:'FFC9DAF8'}); });
+    m.cambios.forEach((x, i)=>{
+      [fechaHoraCorta(x.en), x.por, ACCION_TXT[x.accion] || x.accion, x.detalle].forEach((v, k)=>{ pon(wc, 5 + i, k + 1, v, {size:9, h: k === 3 ? 'left' : 'center'}); });
+    });
+    if(!m.cambios.length){
+      wc.mergeCells(5, 1, 5, 4);
+      pon(wc, 5, 1, 'No hay cambios registrados para este mes.', {size:10, italic:true, border:false});
     }
 
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'asistencia_'+MES+'_'+Y+'.xlsx';
+    a.href = url; a.download = 'asistencia_'+MES+'_'+Y+(cierre ? '_CERRADO' : '')+'.xlsx';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=> URL.revokeObjectURL(url), 4000);
     showToast('Hoja de asistencia descargada.');
@@ -3756,6 +4312,9 @@
   }
 
   async function editStaffRecord(date, ref){
+    const cierre = await mesCerradoFecha(date);
+    if(cierre){ avisoMesCerrado(cierre, date); return; }
+    const antes = {entrada: ref.entrada || '', salida: ref.salida || ''};
     const nuevaEntrada = window.prompt('Hora de entrada (HH:MM), vacío para dejar igual:', ref.entrada||'');
     if(nuevaEntrada===null) return;
     if(nuevaEntrada.trim()){
@@ -3763,28 +4322,39 @@
       ref.entrada = nuevaEntrada.trim();
     }
     const nuevaSalida = window.prompt('Hora de salida (HH:MM), vacío para dejar igual, escribe "-" para borrarla:', ref.salida||'');
-    if(nuevaSalida===null){ await saveRecords(date); render(); return; }
+    const auditarEdicion = ()=>{
+      const cambios = [];
+      if((ref.entrada || '') !== antes.entrada) cambios.push('entrada '+(antes.entrada || '—')+' → '+(ref.entrada || '—'));
+      if((ref.salida || '') !== antes.salida) cambios.push('salida '+(antes.salida || '—')+' → '+(ref.salida || '—'));
+      if(cambios.length) registrarAuditoria('editar_registro', ref.name+' · '+formatDateEs(date)+' · '+cambios.join(' · '), date, {staffId: ref.staffId});
+    };
+    if(nuevaSalida===null){ await saveRecords(date); auditarEdicion(); render(); return; }
     if(nuevaSalida.trim()==='-'){ ref.salida = null; }
     else if(nuevaSalida.trim()){
       if(!isValidTime(nuevaSalida.trim())){ showToast('Formato de hora inválido, usa HH:MM.'); return; }
       ref.salida = nuevaSalida.trim();
     }
     await saveRecords(date);
+    auditarEdicion();
     showToast('Registro actualizado.');
     render();
   }
 
   async function deleteStaffRecord(date, ref){
+    const cierre = await mesCerradoFecha(date);
+    if(cierre){ avisoMesCerrado(cierre, date); return; }
     if(!window.confirm('¿Eliminar este movimiento de '+ref.name+'? Esta acción no se puede deshacer.')) return;
     const arr = state.recordsByDate[date] || [];
     const idx = arr.indexOf(ref);
     if(idx>-1) arr.splice(idx,1);
     await saveRecords(date);
+    registrarAuditoria('eliminar_registro', ref.name+' · '+formatDateEs(date)+' · entrada '+(ref.entrada || '—')+' · salida '+(ref.salida || '—'), date, {staffId: ref.staffId});
     showToast('Movimiento eliminado.');
     render();
   }
 
   async function editVisitorRecord(date, v){
+    const antesV = {entrada: v.entrada || '', salida: v.salida || ''};
     const nuevaEntrada = window.prompt('Hora de entrada (HH:MM), vacío para dejar igual:', v.entrada||'');
     if(nuevaEntrada===null) return;
     if(nuevaEntrada.trim()){
@@ -3792,21 +4362,30 @@
       v.entrada = nuevaEntrada.trim();
     }
     const nuevaSalida = window.prompt('Hora de salida (HH:MM), vacío para dejar igual, escribe "-" para borrarla:', v.salida||'');
-    if(nuevaSalida===null){ await saveVisitors(date); render(); return; }
+    const auditarV = ()=>{
+      const cambios = [];
+      if((v.entrada || '') !== antesV.entrada) cambios.push('entrada '+(antesV.entrada || '—')+' → '+(v.entrada || '—'));
+      if((v.salida || '') !== antesV.salida) cambios.push('salida '+(antesV.salida || '—')+' → '+(v.salida || '—'));
+      if(cambios.length) registrarAuditoria('editar_visitante', (v.name || 'Visitante')+' · '+formatDateEs(date)+' · '+cambios.join(' · '), date);
+    };
+    if(nuevaSalida===null){ await saveVisitors(date); auditarV(); render(); return; }
     if(nuevaSalida.trim()==='-'){ v.salida = null; }
     else if(nuevaSalida.trim()){
       if(!isValidTime(nuevaSalida.trim())){ showToast('Formato de hora inválido, usa HH:MM.'); return; }
       v.salida = nuevaSalida.trim();
     }
     await saveVisitors(date);
+    auditarV();
     showToast('Registro actualizado.');
     render();
   }
 
   async function deleteVisitorRecord(date, id){
     if(!window.confirm('¿Eliminar esta visita? Esta acción no se puede deshacer.')) return;
+    const visEliminada = (state.visitorsByDate[date]||[]).find(x=>x.id===id);
     state.visitorsByDate[date] = (state.visitorsByDate[date]||[]).filter(x=>x.id!==id);
     await saveVisitors(date);
+    registrarAuditoria('eliminar_visitante', (visEliminada ? visEliminada.name : 'Visita')+' · '+formatDateEs(date)+(visEliminada ? ' · entrada '+(visEliminada.entrada || '—')+' · salida '+(visEliminada.salida || '—') : ''), date);
     showToast('Visita eliminada.');
     render();
   }
